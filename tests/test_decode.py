@@ -2,9 +2,9 @@ import numpy as np
 import pytest
 
 from conftest import write_bif
-from imgsearch.bif import parse
-from imgsearch.decode import decoded_batches, prepared_batches
-from imgsearch.decode import decode_frame
+from frameseek.bif import parse
+from frameseek.decode import decoded_batches, prepared_batches
+from frameseek.decode import decode_frame
 from conftest import jpeg
 
 

@@ -1,34 +1,23 @@
 name: frameseek
-# 本地构建：先运行 imgsearch init，再配合 compose.local.yml 启动测试。
-# NAS 拉取镜像使用 compose.ghcr.yml；后台参数在网站设置。
-# 内存模式：low_memory/cold + 2g，或 high_memory/cached + 12g。
-# 切换时暂停后台更新，同时修改 Qdrant mem_limit 和应用 IMGS_MODE，再重建容器。
+# 默认低内存配置；下载模型并修改媒体挂载后，直接 docker compose up -d。
+# 默认 low_memory/cold，Qdrant 2 GiB，应用独立 4 GiB。
+# 大内存模式：将 Qdrant mem_limit 改为 12g，IMGS_MODE 改为 high_memory（cached）。
+# 切换时暂停后台更新，修改后重建容器；沿用原索引。
+# 相对路径以本文件所在目录为基准；data/qdrant 应放在本机 SSD/NVMe。
+# NAS 直接拉取预构建镜像，首次启动自动准备数据目录和登录信息。
 services:
-  qdrant:
-    image: qdrant/qdrant:v1.19.2
-    restart: unless-stopped
-    mem_limit: 2g # 改用 high_memory 时设为 12g。
-    environment:
-      QDRANT__SERVICE__API_KEY: ${IMGS_QDRANT_KEY:?Run imgsearch init first}
-      QDRANT__STORAGE__HNSW_INDEX__MAX_INDEXING_THREADS: 1
-      QDRANT__STORAGE__OPTIMIZERS__MAX_OPTIMIZATION_THREADS: 1
-      QDRANT__STORAGE__OPTIMIZERS__MAX_SEGMENT_SIZE_KB: 131072
-    volumes:
-      - ./data/qdrant:/qdrant/storage
-    networks: [backend]
   app:
-    build: .
-    image: frameseek:0.1.0
+    image: &frameseek_image ghcr.io/ting1e/frameseek:latest
+    pull_policy: always
     restart: unless-stopped
     mem_limit: 4g # 应用独立上限，不与 Qdrant 共用。
     environment:
-      IMGS_USERNAME: admin
-      IMGS_PASSWORD_HASH: ${IMGS_PASSWORD_HASH:?Run imgsearch init first}
-      IMGS_SESSION_SECRET: ${IMGS_SESSION_SECRET:?Run imgsearch init first}
-      IMGS_QDRANT_KEY: ${IMGS_QDRANT_KEY:?Run imgsearch init first}
-      IMGS_MODE: low_memory # 数据库读取/缓存策略，须与选用的内存配置匹配。
+      IMGS_USERNAME: &frameseek_username admin
+      IMGS_MODE: low_memory # 向量和 HNSW 按需从 SSD 读取。
       IMGS_DATA: /data
       IMGS_MODEL: /models/dinov3
+      IMGS_MODEL_MANIFEST: /data/runtime/model-manifest.json
+      IMGS_AUTH_FILE: /data/runtime/auth.env
       IMGS_QDRANT_URL: http://qdrant:6333
       IMGS_PROXY_IPS: '*' # 接受宿主机反向代理的转发头。
     ports:
@@ -36,8 +25,49 @@ services:
     volumes:
       - ./data:/data
       - ./models/dinov3-vitl16:/models/dinov3:ro
-      - ./bif:/media:ro # 挂载媒体根目录，列表内可配置任意已挂载子目录。
-    depends_on: [qdrant]
+      - /mnt/videos:/mnt/videos:ro
+      - /mnt/archive:/mnt/archive:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_started
+    networks: [backend]
+  init:
+    image: *frameseek_image
+    pull_policy: always
+    user: '0:0'
+    restart: 'no'
+    mem_limit: 4g
+    command: [frameseek, bootstrap]
+    environment:
+      IMGS_DATA: /data
+      IMGS_MODEL: /models/dinov3
+      IMGS_USERNAME: *frameseek_username
+      IMGS_PASSWORD_HASH: ${IMGS_PASSWORD_HASH:-}
+      IMGS_SESSION_SECRET: ${IMGS_SESSION_SECRET:-}
+      IMGS_QDRANT_KEY: ${IMGS_QDRANT_KEY:-}
+    volumes:
+      - ./data:/data
+      - ./models/dinov3-vitl16:/models/dinov3:ro
+    network_mode: none
+    healthcheck:
+      disable: true
+  qdrant:
+    image: qdrant/qdrant:v1.19.2
+    restart: unless-stopped
+    mem_limit: 2g # 大内存模式改为 12g。
+    environment:
+      QDRANT__STORAGE__HNSW_INDEX__MAX_INDEXING_THREADS: 1
+      QDRANT__STORAGE__OPTIMIZERS__MAX_OPTIMIZATION_THREADS: 1
+      QDRANT__STORAGE__OPTIMIZERS__MAX_SEGMENT_SIZE_KB: 131072
+    command: [./qdrant, --config-path, /bootstrap/qdrant.yaml]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    volumes:
+      - ./data/runtime/qdrant:/bootstrap:ro
+      - ./data/qdrant:/qdrant/storage
     networks: [backend]
 networks:
   backend:

@@ -71,7 +71,7 @@ def build(settings: Settings, destination: Path, allow_pending: bool = False) ->
             (model_dir/'manifest.json').write_text(json.dumps(settings.manifest,ensure_ascii=False,indent=2),encoding='utf-8')
             for name in ['compose.ghcr.yml','compose.yml','compose.local.yml','Dockerfile','pyproject.toml','README.md']:
                 shutil.copy2(Path(__file__).parent.parent/name,destination/name)
-            shutil.copytree(Path(__file__).parent,destination/'imgsearch',ignore=shutil.ignore_patterns('__pycache__'))
+            shutil.copytree(Path(__file__).parent,destination/'frameseek',ignore=shutil.ignore_patterns('__pycache__'))
             manifest = {'created':time.time(),'model_fingerprint':settings.manifest['fingerprint'],
                         'collection':store.collection,'qdrant_version':'1.19.2','stats':stats,
                         'preflight_only':bool(stats['pending']),'deployment_requires_user_approval':True,

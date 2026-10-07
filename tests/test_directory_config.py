@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from imgsearch.config import Settings, directory_sources
-from imgsearch.indexer import file_id
+from frameseek.config import Settings, directory_sources
+from frameseek.indexer import file_id
 
 
 def test_existing_source_ids_are_preserved_for_flat_directory_configuration():

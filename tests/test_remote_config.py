@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from imgsearch.remote import configuration, roots
+from frameseek.remote import configuration, roots
 
 
 def test_no_ssh_host_or_directories_are_shipped_by_default(tmp_path, monkeypatch):

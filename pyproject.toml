@@ -19,13 +19,13 @@ test = ["pytest==9.1.1"]
 ml = ["torch==2.7.1", "torchvision==0.22.1"]
 
 [project.scripts]
-imgsearch = "imgsearch.cli:main"
+frameseek = "frameseek.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["imgsearch*"]
+include = ["frameseek*"]
 
 [tool.setuptools.package-data]
-imgsearch = ["static/*"]
+frameseek = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

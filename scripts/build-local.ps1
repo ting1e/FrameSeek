@@ -20,9 +20,9 @@ try {
     if (-not ($ResumeBuild -or $ResumeIndex)) {
         # Inventory errors remain documented; inaccessible directories cannot be copied.
         Set-BuildStage 'refresh-inventory'
-        & $taskPython -m imgsearch.cli inventory *> reports\full-inventory.log
+        & $taskPython -m frameseek.cli inventory *> reports\full-inventory.log
         if ($LASTEXITCODE -notin @(0,2)) { throw 'Inventory failed' }
-        Run-Stage 'full-sync-verify' @('-m','imgsearch.cli','sync')
+        Run-Stage 'full-sync-verify' @('-m','frameseek.cli','sync')
     }
     if ($ResumeIndex) {
         $taskPreviousScan = Get-Content -LiteralPath 'reports/full-scan.log' -Encoding utf8 |
@@ -31,11 +31,11 @@ try {
             throw 'Index-only resume requires a completed local scan without errors'
         }
     } else {
-        Run-Stage 'full-scan' @('-m','imgsearch.cli','scan','--trust-stable')
+        Run-Stage 'full-scan' @('-m','frameseek.cli','scan','--trust-stable')
     }
-    Run-Stage 'full-index' @('-m','imgsearch.cli','index','--retry')
-    Run-Stage 'full-vector-verify' @('-m','imgsearch.cli','index','--verify-only')
-    Run-Stage 'full-status' @('-m','imgsearch.cli','status')
+    Run-Stage 'full-index' @('-m','frameseek.cli','index','--retry')
+    Run-Stage 'full-vector-verify' @('-m','frameseek.cli','index','--verify-only')
+    Run-Stage 'full-status' @('-m','frameseek.cli','status')
     $taskFinalStats = Get-Content -LiteralPath 'reports/full-status.log' -Raw -Encoding utf8 | ConvertFrom-Json
     $taskScopeNames = @($taskFinalStats.scope.directories.PSObject.Properties.Name)
     if ($taskScopeNames.Count -gt 0) {

@@ -7,10 +7,10 @@ from pathlib import Path
 import numpy as np
 from dotenv import load_dotenv
 
-from imgsearch.bif import parse
-from imgsearch.config import Settings
-from imgsearch.decode import decoded_batches, prepared_batches
-from imgsearch.model import Embedder
+from frameseek.bif import parse
+from frameseek.config import Settings
+from frameseek.decode import decoded_batches, prepared_batches
+from frameseek.model import Embedder
 
 
 def main():

@@ -31,7 +31,7 @@ def verify_password(password: str, encoded: str) -> bool:
 class Auth:
     def __init__(self, settings, db):
         if len(settings.session_secret) < 32 or not settings.password_hash:
-            raise RuntimeError("Login not configured; run imgsearch init")
+            raise RuntimeError("Login not configured; run frameseek init")
         self.settings = settings
         self.db = db
         self.key = settings.session_secret.encode()

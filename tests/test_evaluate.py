@@ -1,4 +1,4 @@
-from imgsearch.evaluate import matches
+from frameseek.evaluate import matches
 
 
 def test_label_match_requires_source_path_and_time():

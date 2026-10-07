@@ -1,4 +1,4 @@
-from imgsearch.progress import ProcessingProgress
+from frameseek.progress import ProcessingProgress
 
 
 def test_eta_requires_stable_window_and_uses_saved_frames():

@@ -1,7 +1,7 @@
 import csv
 
 from conftest import build, write_bif
-from imgsearch.cleanup import prune_deleted
+from frameseek.cleanup import prune_deleted
 
 
 def test_prune_confirmed_missing_vectors_and_keep_existing_or_changed(runtime, tmp_path):

@@ -134,7 +134,7 @@ class Settings:
     def manifest(self) -> dict:
         path = self.manifest_file or self.model / "manifest.json"
         if not path.is_file():
-            raise RuntimeError("模型未就绪：请先运行 imgsearch prepare-model")
+            raise RuntimeError("模型未就绪：请先运行 frameseek prepare-model")
         result = json.loads(path.read_text(encoding="utf-8"))
         if result.get("model_id") != MODEL_ID or result.get("dimension") != DIMENSION:
             raise RuntimeError("模型清单不匹配 DINOv3 ViT-L/16")

@@ -6,17 +6,44 @@ name: frameseek
 # 相对路径以本文件所在目录为基准；data/qdrant 应放在本机 SSD/NVMe。
 # NAS 直接拉取预构建镜像，首次启动自动准备数据目录和登录信息。
 services:
+  app:
+    image: &frameseek_image ghcr.io/ting1e/frameseek:latest
+    pull_policy: always
+    restart: unless-stopped
+    mem_limit: 4g # 应用独立上限，不与 Qdrant 共用。
+    environment:
+      IMGS_USERNAME: &frameseek_username admin
+      IMGS_MODE: high_memory # 向量和 HNSW 使用可回收预热缓存。
+      IMGS_DATA: /data
+      IMGS_MODEL: /models/dinov3
+      IMGS_MODEL_MANIFEST: /data/runtime/model-manifest.json
+      IMGS_AUTH_FILE: /data/runtime/auth.env
+      IMGS_QDRANT_URL: http://qdrant:6333
+      IMGS_PROXY_IPS: '*' # 接受宿主机反向代理的转发头。
+    ports:
+      - 127.0.0.1:18443:8000
+    volumes:
+      - ./data:/data
+      - ./models/dinov3-vitl16:/models/dinov3:ro
+      - /mnt/videos:/mnt/videos:ro
+      - /mnt/archive:/mnt/archive:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_started
+    networks: [backend]
   init:
-    image: &frameseek_image ghcr.io/ting1e/frameseek:latest # 只在这里修改镜像地址。
+    image: *frameseek_image
     pull_policy: always
     user: '0:0'
     restart: 'no'
     mem_limit: 4g
-    command: [imgsearch, bootstrap]
+    command: [frameseek, bootstrap]
     environment:
       IMGS_DATA: /data
       IMGS_MODEL: /models/dinov3
-      IMGS_USERNAME: &frameseek_username admin
+      IMGS_USERNAME: *frameseek_username
       IMGS_PASSWORD_HASH: ${IMGS_PASSWORD_HASH:-}
       IMGS_SESSION_SECRET: ${IMGS_SESSION_SECRET:-}
       IMGS_QDRANT_KEY: ${IMGS_QDRANT_KEY:-}
@@ -41,33 +68,6 @@ services:
     volumes:
       - ./data/runtime/qdrant:/bootstrap:ro
       - ./data/qdrant:/qdrant/storage
-    networks: [backend]
-  app:
-    image: *frameseek_image
-    pull_policy: always
-    restart: unless-stopped
-    mem_limit: 4g # 应用独立上限，不与 Qdrant 共用。
-    environment:
-      IMGS_USERNAME: *frameseek_username
-      IMGS_MODE: high_memory # 向量和 HNSW 使用可回收预热缓存。
-      IMGS_DATA: /data
-      IMGS_MODEL: /models/dinov3
-      IMGS_MODEL_MANIFEST: /data/runtime/model-manifest.json
-      IMGS_AUTH_FILE: /data/runtime/auth.env
-      IMGS_QDRANT_URL: http://qdrant:6333
-      IMGS_PROXY_IPS: '*' # 接受宿主机反向代理的转发头。
-    ports:
-      - 127.0.0.1:18443:8000
-    volumes:
-      - ./data:/data
-      - ./models/dinov3-vitl16:/models/dinov3:ro
-      - /mnt/videos:/mnt/videos:ro
-      - /mnt/archive:/mnt/archive:ro
-    depends_on:
-      init:
-        condition: service_completed_successfully
-      qdrant:
-        condition: service_started
     networks: [backend]
 networks:
   backend:

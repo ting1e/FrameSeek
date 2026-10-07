@@ -283,7 +283,7 @@ class Emby:
                   and audio.get('Codec') in {None,'aac','mp3'} and not source.get('RequiredHttpHeaders'))
         token = secrets.token_urlsafe(32)
         params = {'UserId':config.user_id,'MediaSourceId':str(source.get('Id') or item['media_source_id']),
-                  'DeviceId':'imgsearch-'+token,'PlaySessionId':uuid.uuid4().hex,'Static':'true' if direct else 'false'}
+                  'DeviceId':'frameseek-'+token,'PlaySessionId':uuid.uuid4().hex,'Static':'true' if direct else 'false'}
         if not direct:
             params.update(VideoCodec='h264',AudioCodec='aac',VideoBitrate='8000000',AudioBitrate='192000',
                           StartTimeTicks=str(int(row['time_ms'])*10000),AllowVideoStreamCopy='false',AllowAudioStreamCopy='false')

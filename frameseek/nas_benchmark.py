@@ -34,8 +34,8 @@ def main():
     args = parser.parse_args()
     if args.frames < 1 or args.repeat < 1:
         parser.error('frames and repeat must be positive')
-    directory = '/tmp/imgsearch-benchmark-'+uuid.uuid4().hex
-    tag = 'bif-imgsearch-benchmark:20261006'
+    directory = '/tmp/frameseek-benchmark-'+uuid.uuid4().hex
+    tag = 'bif-frameseek-benchmark:20261006'
     reports = Path('reports'); reports.mkdir(exist_ok=True)
     client = connect()
     image_loaded = False
@@ -67,7 +67,7 @@ def main():
                '-e IMGS_TORCH_THREADS=4 -e IMGS_SOURCES='+shlex.quote(environment)+' '
                '-v '+shlex.quote(directory+'/model:/models/dinov3:ro')+' '
                '-v '+shlex.quote(directory+'/scratch:/scratch')+' '+mounts+' '+tag+
-               ' python -m imgsearch.benchmark --device cpu --batch 1 --frames '+str(args.frames)+
+               ' python -m frameseek.benchmark --device cpu --batch 1 --frames '+str(args.frames)+
                ' --repeat '+str(args.repeat)+' --output /scratch/result.json')
         command(client,run,reports/'nas-benchmark-run.log')
         with client.open_sftp() as sftp:
@@ -77,7 +77,7 @@ def main():
     finally:
         # Remove only the exact unique benchmark directory, never a computed parent.
         cleanup = ("import os,shutil; p="+repr(directory)+
-                   "; r=os.path.realpath(p); assert r==p and r.startswith('/tmp/imgsearch-benchmark-') "
+                   "; r=os.path.realpath(p); assert r==p and r.startswith('/tmp/frameseek-benchmark-') "
                    "and len(r.rsplit('-',1)[1])==32; shutil.rmtree(r)")
         try:
             command(client,'python3 -c '+shlex.quote(cleanup))

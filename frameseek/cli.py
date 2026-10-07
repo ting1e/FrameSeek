@@ -35,7 +35,7 @@ def main():
     from .console import configure_console
     configure_console()
     load_dotenv(Path.cwd() / '.env', override=False)
-    parser = argparse.ArgumentParser(prog="imgsearch")
+    parser = argparse.ArgumentParser(prog="frameseek")
     sub = parser.add_subparsers(dest="command", required=True)
     initial = sub.add_parser("init")
     initial.add_argument("--env-file", default=".env")
@@ -136,7 +136,7 @@ def main():
             while jobs := indexer.pending(args.source):
                 paused = runtime.db.one("SELECT value FROM meta WHERE key='paused'")
                 if paused and paused['value'] == 'true':
-                    print('Indexing paused; run imgsearch resume to continue')
+                    print('Indexing paused; run frameseek resume to continue')
                     break
                 for job in jobs:
                     remaining = args.max_frames - processed if args.max_frames is not None else None

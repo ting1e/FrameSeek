@@ -8,8 +8,8 @@ import pytest
 from dotenv import load_dotenv
 from qdrant_client import models
 
-from imgsearch.config import Settings
-from imgsearch.vectors import VectorStore
+from frameseek.config import Settings
+from frameseek.vectors import VectorStore
 
 pytestmark = pytest.mark.skipif(os.getenv('IMGS_SERVER_TEST') != '1', reason='Real Qdrant server integration is opt-in')
 

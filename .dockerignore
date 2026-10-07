@@ -3,8 +3,8 @@
 !Dockerfile
 !.dockerignore
 !pyproject.toml
-!imgsearch/
-!imgsearch/**
+!frameseek/
+!frameseek/**
 
 # 即使被放进源码目录，也不允许缓存、凭据、权重、数据库或媒体进入镜像。
 **/__pycache__/**

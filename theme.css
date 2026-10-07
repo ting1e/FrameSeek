@@ -1,6 +1,6 @@
 @import "tailwindcss" source(none);
-@source "./imgsearch/static/*.html";
-@source "./imgsearch/static/*.js";
+@source "./frameseek/static/*.html";
+@source "./frameseek/static/*.js";
 @plugin "daisyui" {
   themes: autumn --default;
 }

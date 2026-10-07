@@ -7,9 +7,9 @@ import pytest
 from PIL import Image
 
 from conftest import build, write_bif
-from imgsearch import bif
-from imgsearch.import_embeddings import import_export, import_file
-from imgsearch.model import digest
+from frameseek import bif
+from frameseek.import_embeddings import import_export, import_file
+from frameseek.model import digest
 
 
 def export_file(runtime, tmp_path, source='sda', relative='foreign/same.bif'):

@@ -10,12 +10,12 @@ import urllib.request
 
 import torch
 from transformers import AutoModel
-from imgsearch.remote import roots
-import imgsearch
+from frameseek.remote import roots
+import frameseek
 assert os.getuid() == 10001
 assert torch.version.cuda is None
 assert roots() == {}
-package = Path(imgsearch.__file__).parent
+package = Path(frameseek.__file__).parent
 assert (package/'static/app.js').is_file()
 assert not Path('/app/.env').exists()
 assert not any(p.name in ('credentials.txt', 'sync.local.json') or p.name.endswith(('.bif','.safetensors','.snapshot','.npz','.sqlite3')) for p in Path('/app').rglob('*'))
@@ -23,12 +23,12 @@ assert not any(p.name in ('credentials.txt', 'sync.local.json') or p.name.endswi
 
 with tempfile.TemporaryDirectory() as folder:
     env_path = Path(folder) / '.env'
-    subprocess.run(['imgsearch','init'], cwd=folder, check=True, capture_output=True)
+    subprocess.run(['frameseek','init'], cwd=folder, check=True, capture_output=True)
     credentials = (Path(folder) / 'credentials.txt').read_text().splitlines()
     username, password = [line.split(':',1)[1].strip() for line in credentials[:2]]
     assert username == 'admin'
     child_env = dict(os.environ, IMGS_DEVICE='cpu', IMGS_DATA=folder+'/data', IMGS_SECURE_COOKIE='false')
-    process = subprocess.Popen(['imgsearch','serve','--port','18501'], cwd=folder, env=child_env,
+    process = subprocess.Popen(['frameseek','serve','--port','18501'], cwd=folder, env=child_env,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         base = 'http://127.0.0.1:18501'

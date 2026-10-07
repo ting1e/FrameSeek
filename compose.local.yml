@@ -1,14 +1,19 @@
+# 本地 HTTP 测试覆盖；镜像仍从 GHCR 拉取。
+# docker compose -f compose.yml -f compose.local.yml up -d
 services:
+  app:
+    image: ghcr.io/ting1e/frameseek:latest
+    environment:
+      IMGS_SECURE_COOKIE: 'false'
+      IMGS_ESCAPED_PATHS: 'true'
+    volumes: !override
+      - ./data:/data
+      - ./models/dinov3-vitl16:/models/dinov3:ro
+      - ./bif:/media:ro
   qdrant:
     volumes:
       - qdrant_local:/qdrant/storage
     ports:
       - 127.0.0.1:16333:6333
-
-  app:
-    environment:
-      IMGS_SECURE_COOKIE: 'false'
-      IMGS_ESCAPED_PATHS: 'true'
-
 volumes:
   qdrant_local:

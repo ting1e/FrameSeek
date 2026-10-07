@@ -2,9 +2,9 @@ import io
 import json
 from types import SimpleNamespace
 
-from imgsearch.model import digest
-from imgsearch.paths import media_path
-from imgsearch.sync import sync
+from frameseek.model import digest
+from frameseek.paths import media_path
+from frameseek.sync import sync
 
 
 class RemoteFile(io.BytesIO):

@@ -6,10 +6,10 @@ from PIL import Image
 
 from fastapi.testclient import TestClient
 from conftest import build, jpeg, write_bif
-from imgsearch.config import Settings
-from imgsearch.media import plan_directories, remember_sources
-from imgsearch.search import Runtime
-from imgsearch.web import create_app
+from frameseek.config import Settings
+from frameseek.media import plan_directories, remember_sources
+from frameseek.search import Runtime
+from frameseek.web import create_app
 
 
 def login(client):

@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from imgsearch.bif import MAGIC
-from imgsearch.config import MODEL_ID, Settings
-from imgsearch.search import Runtime
+from frameseek.bif import MAGIC
+from frameseek.config import MODEL_ID, Settings
+from frameseek.search import Runtime
 
 
 def jpeg(color):
@@ -61,7 +61,7 @@ def runtime(tmp_path):
                         password_hash='')
     for root in settings.sources.values():
         root.mkdir()
-    from imgsearch.auth import password_hash
+    from frameseek.auth import password_hash
     settings.password_hash = password_hash('testing-secret')
     result = Runtime(settings, embedder=TestEmbedder())
     yield result

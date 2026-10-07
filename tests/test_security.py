@@ -6,8 +6,8 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
-from imgsearch.auth import Auth
-from imgsearch.web import create_app
+from frameseek.auth import Auth
+from frameseek.web import create_app
 
 
 def request(address='client', token=''):
@@ -24,7 +24,7 @@ def test_concurrent_bad_logins_cannot_bypass_limit(runtime, monkeypatch):
         calls.append(1)
         time.sleep(.03)
         return False
-    monkeypatch.setattr('imgsearch.auth.verify_password', wrong_password)
+    monkeypatch.setattr('frameseek.auth.verify_password', wrong_password)
     def attempt(_):
         barrier.wait()
         try:
@@ -39,7 +39,7 @@ def test_concurrent_bad_logins_cannot_bypass_limit(runtime, monkeypatch):
 
 def test_single_account_limit_survives_changing_proxy_address(runtime, monkeypatch):
     auth = Auth(runtime.settings, runtime.db)
-    monkeypatch.setattr('imgsearch.auth.verify_password', lambda *args:False)
+    monkeypatch.setattr('frameseek.auth.verify_password', lambda *args:False)
     statuses = []
     for i in range(6):
         try:
@@ -68,7 +68,8 @@ def test_logout_revokes_copied_cookie_and_keeps_other_login(runtime):
             assert error.status_code == 401
         else:
             raise AssertionError('Logged-out session was reused after restart')
-        assert fresh.require(request(token=other)) == other
+        # The HTTP cookie jar may quote a base64 value containing '='; Request unquotes it.
+        assert fresh.require(request(token=other)) == other.strip('"')
         assert second.status_code == 200
 
 

@@ -1,4 +1,4 @@
-<p><img src="imgsearch/static/app-icon.png" width="96" alt="FrameSeek 图标"></p>
+<p><img src="frameseek/static/app-icon.png" width="96" alt="FrameSeek 图标"></p>
 
 # FrameSeek
 
@@ -75,6 +75,8 @@ docker compose -f compose.ghcr.yml exec app cat /data/credentials.txt
 
 默认用户名为 `admin`，可在 Compose 中修改；重启沿用原来的登录信息。数据和首次启动配置保存在 `data`，模型目录保持只读。
 
+密码由 Python `secrets` 使用系统安全随机源生成，包含 144 位随机性。登录验证使用随机盐和 60 万次 PBKDF2-SHA256；首次生成的明文密码保存在 `data/credentials.txt`，Linux 权限为 `600`。保存好密码后可以删除这个文件，登录仍可正常使用。
+
 应用端口为 `127.0.0.1:18443`，接入 HTTPS 反向代理后访问。镜像若为私有包，先登录 `ghcr.io`；公开包可以直接拉取。Qdrant 数据目录放在 SSD/NVMe 上。
 
 登录网站后，在“设置”中填写需要监控的完整目录，每行一个，例如 `/mnt/videos` 或 `/mnt/videos/国产剧`，修改后自动保存到 SQLite，下一轮扫描生效。取消监控会保留已有索引；添加尚未挂载的宿主机目录时，先修改 Compose 挂载。点击后台任务中的手动扫描，或开启自动更新。NAS CPU 可以从每批 1 帧、4 个推理线程、1 个解码线程开始；修改线程和批次后重启应用。
@@ -109,29 +111,31 @@ docker compose -f compose.ghcr.yml up -d
 python -m venv .venv
 # 激活虚拟环境后执行
 pip install -e '.[ml,test]'
-imgsearch init
-imgsearch prepare-model
-imgsearch serve
+frameseek init
+frameseek prepare-model
+frameseek serve
 ```
 
 在 `.env` 中设置 `IMGS_DEVICE`，媒体目录和处理批次在网站配置。旧目录映射会保存到 SQLite，现有索引继续使用，无需重新编码。命令行也可以建索引：
 
 ```bash
-imgsearch scan
-imgsearch index
-imgsearch index --verify-only
-imgsearch status
+frameseek scan
+frameseek index
+frameseek index --verify-only
+frameseek status
 ```
 
 从 NAS 复制 BIF 时，将 [`sync.example.json`](sync.example.json) 复制为 `sync.local.json`，填写 SSH 连接和远程目录，使用系统 SSH 密钥连接：
 
 ```bash
-imgsearch inventory
-imgsearch sync
+frameseek inventory
+frameseek sync
 ```
 
-`imgsearch backup` 可以备份 SQLite 和 Qdrant 快照，搜索历史和网站配置也会一起保存。
+`frameseek backup` 可以备份 SQLite 和 Qdrant 快照，搜索历史和网站配置也会一起保存。
 
-本地 Docker 测试使用 `compose.yml` 加 `compose.local.yml`，凭据由 `imgsearch init` 生成。内存模式直接修改 Compose 中的 `mem_limit` 和 `IMGS_MODE`。
+所有 Compose 都直接使用 GHCR 镜像：`compose.yml` 默认 2 GiB，`compose.ghcr.yml` 默认 12 GiB。本地 HTTP 测试使用 `compose.yml` 加 `compose.local.yml`（Docker Compose 2.24.4+），首次启动自动生成登录信息。内存模式直接修改 Compose 中的 `mem_limit` 和 `IMGS_MODE`。
+
+源码在 `frameseek/`，前端文件在 `frameseek/static/`，测试在 `tests/`，开发脚本在 `scripts/`。本地验证新镜像可运行 `docker build -t frameseek:ci .`；部署无需本地构建。
 
 `theme.css` 是 daisyUI 样式构建入口。修改主题或前端使用的样式类后，用 Node.js 20+ 运行 `npm ci` 和 `npm run build:css`。静态文件已包含在镜像中，NAS 直接运行即可。

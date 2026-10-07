@@ -5,7 +5,7 @@ import pytest
 from PIL import Image
 
 from conftest import build, write_bif
-from imgsearch.search import fold
+from frameseek.search import fold
 
 
 def test_two_roots_same_name_and_neighbors(runtime):
@@ -156,7 +156,7 @@ def test_modified_while_encoding_discards_superseded_progress(runtime):
     assert indexer.process_version(old['id']) == 0
     indexer.process_version(new['id'], max_frames=1)
     # Recreate the indexer, as after restarting an interrupted update.
-    from imgsearch.indexer import Indexer
+    from frameseek.indexer import Indexer
     resumed = Indexer(runtime.settings, runtime.db, runtime.embedder, runtime.get_store())
     resumed.process_version(new['id'])
     resumed.cleanup()
@@ -250,7 +250,7 @@ def test_scan_deadline_yields_without_losing_progress(runtime):
 
 def test_monitor_folders_prunes_scan_and_preserves_existing(runtime):
     from conftest import write_bif, build
-    from imgsearch.preferences import current, Preferences
+    from frameseek.preferences import current, Preferences
     import json
     write_bif(runtime.settings.sources['sda']/'keep'/'one.bif')
     write_bif(runtime.settings.sources['sda']/'keeper'/'outside.bif')
@@ -279,7 +279,7 @@ def test_monitor_folders_prunes_scan_and_preserves_existing(runtime):
 
 def test_missing_monitored_directory_does_not_delete_index(runtime):
     from conftest import write_bif, build
-    from imgsearch.preferences import current, Preferences
+    from frameseek.preferences import current, Preferences
     write_bif(runtime.settings.sources['sda']/'watched'/'one.bif'); build(runtime)
     values = current(runtime.settings)
     values['monitor_folders'] = [{'source':'sda','path':'watched'}]

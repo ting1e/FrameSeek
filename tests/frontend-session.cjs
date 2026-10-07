@@ -2,8 +2,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const html = fs.readFileSync('imgsearch/static/index.html', 'utf8');
-const source = fs.readFileSync('imgsearch/static/app.js', 'utf8');
+const html = fs.readFileSync('frameseek/static/index.html', 'utf8');
+const source = fs.readFileSync('frameseek/static/app.js', 'utf8');
 async function check(outcome) {
   const elements = new Map();
   const element = id => {

@@ -17,7 +17,7 @@ const elements=new Map(), cards=new Element();
 const element=id=> { if (!elements.has(id)) elements.set(id,new Element()); return elements.get(id); };
 element('hit-sort').value='similarity';
 const context=vm.createContext({document:{getElementById:element,createElement:tag=>new Element(tag),querySelectorAll:selector=>cards.querySelectorAll(selector),addEventListener(){},documentElement:{scrollHeight:800,scrollTop:0}},window:{innerHeight:800,addEventListener(){}},fetch:()=>new Promise(()=>{}),AbortController,setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},console});
-vm.runInContext(fs.readFileSync('imgsearch/static/app.js','utf8'),context);
+vm.runInContext(fs.readFileSync('frameseek/static/app.js','utf8'),context);
 const first={id:'one',source:'sda',relpath:'dir/movie.bif',version:'v',score:.9,time_ms:10000,frame_no:1,preview_url:'/api/frames/one',duration_ms:100000};
 const second={...first,id:'two',score:.8,time_ms:30000,frame_no:3,preview_url:'/api/frames/two'};
 assert.equal(context.prepareResults({results:[first,second],collapsed:false}).length,2);
