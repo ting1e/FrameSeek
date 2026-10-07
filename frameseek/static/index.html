@@ -6,7 +6,7 @@
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=20261007-generated">
   <link rel="apple-touch-icon" href="/static/app-icon.png?v=20261007">
   <link rel="stylesheet" href="/static/daisyui.css?v=20261007-theme-cleanup"><link rel="stylesheet" href="/static/style.css?v=20261007-result-frame-row">
-  <script src="/static/app.js?v=20261007-result-frame-row" defer></script>
+  <script src="/static/app.js?v=20261007-inference-settings" defer></script>
 </head>
 <body class="bg-base-200 text-base-content">
   <header class="navbar page-header"><a class="brand" href="/" aria-label="FrameSeek 首页">FrameSeek</a><div id="header-status" class="header-status" hidden><nav class="tabs tabs-border flex-1 header-navigation" aria-label="主导航"><button id="search-tab" class="text-base tab tab-active font-medium" aria-current="page">截图搜索</button><button id="history-tab" class="text-base tab">搜索历史</button><button id="background-tasks" class="text-base tab">后台任务</button><button id="settings-tab" class="text-base tab">设置</button></nav><button id="logout" class="btn btn-ghost btn-sm">退出登录</button></div></header>
@@ -48,6 +48,10 @@
       <section id="settings-workspace" hidden>
         <div class="history-heading workspace-toolbar"><button id="reload-settings" class="btn btn-outline btn-sm">重新读取</button></div>
         <form id="settings-form" class="settings-form"><div class="card bg-base-100 settings-card"><div class="card-body"><h2>监控文件夹</h2><p class="settings-help">完整目录，每行一个，监控其中及子目录的 BIF 和图片；留空停止监控。</p><label class="fieldset">目录列表<textarea id="monitor-directories" class="textarea monitor-paths" rows="5" placeholder="/mnt/videos&#10;/mnt/archive"></textarea></label><p class="settings-help">Docker 填写容器内目录，新增目录需先在 Compose 中挂载；本地运行填写本机目录。</p><p class="settings-help">下一轮扫描生效。取消监控保留已有画面和历史；删除文件会移除对应画面。</p></div></div>
+          <div class="card bg-base-100 settings-card"><div class="card-body"><h2>图片特征提取</h2><p class="settings-help">搜索和后台处理使用同一设备。设备与精度修改后，重启应用生效。</p><div class="settings-fields">
+            <label>推理设备<select id="config-device" class="select" required><option value="cpu">CPU</option></select><small id="inference-device-help"></small></label>
+            <label>计算精度<select id="config-precision" class="select" required><option value="fp32">FP32（默认）</option><option value="fp16">FP16（混合精度）</option></select><small id="inference-precision-help">输出向量始终保存为 float32。</small></label>
+          </div><p id="inference-running" class="settings-help" role="status"></p><p class="settings-help">已有索引会保留。FP16 可能带来相似度和排序的细微变化。</p></div></div>
           <div class="card bg-base-100 settings-card"><div class="card-body"><h2>后台处理</h2><p class="settings-help">逐个处理，搜索优先。线程数、处理批次和保存进度修改后需重启应用。</p><div class="settings-fields">
             <label>CPU 推理线程数<input id="config-cpu-threads" class="input" type="number" min="1" max="16" required><small>建议从 4 个线程开始。</small></label>
 

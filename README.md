@@ -116,7 +116,9 @@ frameseek prepare-model
 frameseek serve
 ```
 
-在 `.env` 中设置 `IMGS_DEVICE`，媒体目录和处理批次在网站配置。旧目录映射会保存到 SQLite，现有索引继续使用，无需重新编码。命令行也可以建索引：
+在网页“设置 → 图片特征提取”中选择 CPU、NVIDIA GPU 或 Intel 核显，以及 FP32 / FP16。修改自动保存，重启应用后生效；页面显示当前运行的设备和精度。已有设置缺少这些字段时沿用 `IMGS_DEVICE`（默认 CPU）和 `IMGS_PRECISION`（默认 FP32）。媒体目录和处理批次在网站配置。旧目录映射会保存到 SQLite，现有索引继续使用，无需重新编码。命令行也可以建索引：
+
+默认 GHCR 镜像支持 CPU 和 Intel 核显。NVIDIA GPU 推理需安装 CUDA 版 PyTorch；在 Docker 中运行还需透传显卡。FP16 不一定更快，可按实际处理速度选择。
 
 ```bash
 frameseek scan
@@ -124,6 +126,16 @@ frameseek index
 frameseek index --verify-only
 frameseek status
 ```
+
+Intel 核显需要额外准备同一模型的 OpenVINO 文件（只转换一次），并允许容器访问核显：
+
+```bash
+frameseek prepare-openvino --output models/dinov3-vitl16-openvino
+export IMGS_RENDER_GID=$(stat -c '%g' /dev/dri/renderD128)
+docker compose -f compose.ghcr.yml -f compose.intel.yml up -d
+```
+
+转换目录须与 `models/dinov3-vitl16` 来自同一模型。`compose.intel.yml` 将转换后的文件只读挂载，并补充核显设备权限；镜像包含 OpenVINO 和 Intel 计算驱动。网页会禁用未检测到或尚未准备好的设备，不会自动回退 CPU。Intel FP16 自动使用激活缩放系数 8，避免 DINOv3 中间值越界；现有索引保持不变，但 FP16 可能影响相似度和排序。Intel 后端当前按单张运行；NVIDIA 使用现有 PyTorch/CUDA 后端。CPU / NVIDIA 的 FP16 使用自动混合精度，保留 LayerScale 和最终归一化的 FP32 计算。`IMGS_OPENVINO_MODEL` 可以指定其他转换目录。
 
 从 NAS 复制 BIF 时，将 [`sync.example.json`](sync.example.json) 复制为 `sync.local.json`，填写 SSH 连接和远程目录，使用系统 SSH 密钥连接：
 

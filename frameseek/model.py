@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import threading
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
@@ -86,17 +87,14 @@ class Embedder:
         self.gate = InferenceGate()
         self.net = None
         self.batch_size = settings.batch
+        self.openvino = None
 
     def load(self):
         if self.net is not None:
             return
         import torch
         from torchvision.transforms import v2
-        from transformers import AutoModel
         manifest = self.settings.manifest
-        for name, expected in manifest["weights"].items():
-            if digest(self.settings.model / name) != expected:
-                raise RuntimeError(f"Model checksum mismatch: {name}")
         torch.set_num_threads(self.settings.cpu_threads)
         self.torch = torch
         self.transform = v2.Compose([
@@ -104,8 +102,19 @@ class Embedder:
             v2.ToDtype(torch.float32, scale=True),
             v2.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         ])
-        self.net = AutoModel.from_pretrained(self.settings.model, local_files_only=True,
-                                             use_safetensors=True).eval().to(self.settings.device)
+        if self.settings.device.startswith('openvino:'):
+            from .inference import load_openvino
+            self.openvino = load_openvino(self.settings)
+            self.net = self.openvino
+            # The validated Intel model has a fixed one-image input.
+            self.batch_size = 1
+        else:
+            for name, expected in manifest['weights'].items():
+                if digest(self.settings.model / name) != expected:
+                    raise RuntimeError(f'Model checksum mismatch: {name}')
+            from transformers import AutoModel
+            self.net = AutoModel.from_pretrained(self.settings.model, local_files_only=True,
+                                                 use_safetensors=True).eval().to(self.settings.device)
 
     def prepare_images(self, images: list[Image.Image]):
         """CPU preprocessing may run ahead of GPU inference in a producer thread."""
@@ -126,9 +135,25 @@ class Embedder:
             count = min(self.batch_size, len(prepared) - start)
             inputs = result = None
             try:
+                if self.openvino is not None:
+                    values = self.openvino(prepared[start:start+count].cpu().numpy())
+                    if values.shape != (count, DIMENSION) or not np.isfinite(values).all():
+                        raise RuntimeError('核显输出无效，请改用 FP32 后重启应用')
+                    lengths = np.linalg.norm(values, axis=1, keepdims=True)
+                    if not np.isfinite(lengths).all() or (lengths < 1e-12).any():
+                        raise RuntimeError('核显输出无效，请改用 FP32 后重启应用')
+                    pieces.append((values / lengths).astype(np.float32))
+                    start += count
+                    continue
                 inputs = prepared[start:start + count].to(self.settings.device, non_blocking=True)
+                device_type = 'cuda' if self.settings.device.startswith('cuda') else 'cpu'
+                mixed = (self.torch.autocast(device_type, dtype=self.torch.float16)
+                         if self.settings.precision == 'fp16' else nullcontext())
+                with self.torch.inference_mode(), mixed:
+                    result = self.net(pixel_values=inputs).last_hidden_state[:, 0]
+                # Residuals/LayerScale retain FP32; normalization and index vectors always use FP32.
+                result = result.float()
                 with self.torch.inference_mode():
-                    result = self.net(pixel_values=inputs).last_hidden_state[:, 0].float()
                     result = self.torch.nn.functional.normalize(result, dim=1)
                 values = result.cpu().numpy()
                 if values.shape[1] != DIMENSION or not np.isfinite(values).all():

@@ -64,6 +64,8 @@ class Settings:
     qdrant_url: str = field(default_factory=lambda: os.getenv("IMGS_QDRANT_URL", "http://127.0.0.1:6333"))
     qdrant_key: str | None = field(default_factory=lambda: os.getenv("IMGS_QDRANT_KEY"))
     device: str = field(default_factory=lambda: os.getenv("IMGS_DEVICE", "cpu"))
+    precision: str = field(default_factory=lambda: os.getenv('IMGS_PRECISION', 'fp32'))
+    openvino_model: Path | None = field(default_factory=lambda: Path(os.environ['IMGS_OPENVINO_MODEL']) if os.getenv('IMGS_OPENVINO_MODEL') else None)
     batch: int = field(default_factory=lambda: int(os.getenv("IMGS_BATCH", "1")))
     chunk_frames: int = field(default_factory=lambda: int(os.getenv("IMGS_CHUNK_FRAMES", "64")))
     decode_workers: int = field(default_factory=lambda: int(os.getenv("IMGS_DECODE_WORKERS", "1")))
@@ -99,6 +101,8 @@ class Settings:
             if saved:
                 profile = json.loads(saved[0])
                 profile.setdefault("decode_workers", self.decode_workers)
+                profile.setdefault('device', self.device)
+                profile.setdefault('precision', self.precision)
                 profile.setdefault("monitor_folders", self.monitor_folders or [{'source':name, 'path':''} for name in self.sources])
                 values = Preferences.model_validate(profile).model_dump()
                 for name, attribute in FIELDS.items():
@@ -106,6 +110,8 @@ class Settings:
                         setattr(self, attribute, values[name])
         if self.mode not in {"low_memory", "high_memory"}:
             raise ValueError("IMGS_MODE must be low_memory or high_memory")
+        from .preferences import Preferences
+        Preferences(device=self.device, precision=self.precision)
         if self.batch < 1 or self.chunk_frames < 1 or self.interval < 1 or self.stable_seconds < 0:
             raise ValueError("Invalid batch/scan/stability settings")
         if not 1 <= self.decode_workers <= 16:

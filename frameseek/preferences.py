@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
@@ -29,6 +30,8 @@ class Preferences(BaseModel):
     qdrant_memory_gib: int = Field(2, ge=1, le=24)
     app_memory_gib: int = Field(4, ge=2, le=16)
     cpu_threads: int = Field(4, ge=1, le=16)
+    device: str = Field('cpu', max_length=40)
+    precision: Literal['fp32', 'fp16'] = 'fp32'
     indexing_threads: int = Field(1, ge=1, le=8)
     decode_workers: int = Field(1, ge=1, le=16)
     batch: int = Field(1, ge=1, le=32)
@@ -39,6 +42,13 @@ class Preferences(BaseModel):
     default_top: Literal[20, 50, 100, 200, 500] = 20
     collapse_results: bool = True
     monitor_folders: list[MonitorFolder] = Field(default_factory=list, max_length=100)
+
+    @field_validator('device')
+    @classmethod
+    def inference_device(cls, value):
+        if value not in {'cpu', 'openvino:GPU', 'openvino:CPU'} and not re.fullmatch(r'cuda(?::\d+)?', value):
+            raise ValueError('请选择 CPU、Intel 核显或 NVIDIA GPU')
+        return value
 
     @model_validator(mode='after')
     def constrain_low_memory(self):
@@ -73,6 +83,8 @@ def requested(settings, db) -> dict:
     profile = json.loads(row['value']) if row else current(settings)
     profile.setdefault('decode_workers', settings.decode_workers)
     profile.setdefault('monitor_folders', settings.monitor_folders)
+    profile.setdefault('device', settings.device)
+    profile.setdefault('precision', settings.precision)
     values = Preferences.model_validate(profile).model_dump()
     values.update({name: getattr(settings, FIELDS[name]) for name in DOCKER_FIELDS})
     return values

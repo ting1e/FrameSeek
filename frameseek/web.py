@@ -272,16 +272,21 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
         auth.require(request)
         desired = requested(settings, runtime.db)
         active = current(settings)
+        from .inference import inference_options
         return {'saved': desired, 'running': active,
                 'monitor_directories': monitor_directories(settings, desired['monitor_folders']),
                 'source_directories': [{'source': source, 'root': root.resolve().as_posix(), 'nas_root': remote_roots.get(source)} for source, root in settings.sources.items()],
                 'restart_required': any(desired[key] != active[key] for key in desired if key not in {'default_top', 'collapse_results'}),
-                'device': settings.device, 'background_files_concurrency': 1,
+                'device': settings.device, 'precision': settings.precision,
+                'inference_options': inference_options(settings), 'background_files_concurrency': 1,
                 'memory_limit_note': '内存上限仅在 Docker 中生效，保存后需导出配置并重建容器；本地直接运行的应用无此限制。'}
 
     @app.put('/api/settings')
     def settings_put(request: Request, values: WebPreferences):
         auth.require(request, mutation=True)
+        previous = requested(settings, runtime.db)
+        # Older clients must not reset a saved inference choice when editing unrelated settings.
+        values = values.model_copy(update={name: previous[name] for name in ('device', 'precision') if name not in values.model_fields_set})
         directories = values.monitor_directories
         values = Preferences.model_validate(values.model_dump(exclude={'monitor_directories'}))
         new_sources, registry = settings.sources, None
@@ -293,6 +298,12 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
                 raise HTTPException(422, str(error)) from None
         # Keep accepting legacy profiles, but container resources are owned by Compose.
         values = values.model_copy(update={name: current(settings)[name] for name in DOCKER_FIELDS})
+        if (values.device, values.precision) != (previous['device'], previous['precision']):
+            from .inference import validate_inference_choice
+            try:
+                validate_inference_choice(settings, values.device)
+            except ValueError as error:
+                raise HTTPException(422, str(error)) from None
         for folder in values.monitor_folders:
             if folder.source not in new_sources:
                 raise HTTPException(422, '未知的视频来源：' + folder.source)
@@ -320,7 +331,7 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
         return {'ok': True, 'restart_required': any(values.model_dump()[key] != current(settings)[key]
                 for key in values.model_dump() if key not in {'default_top', 'collapse_results'}),
                 'source_directories': [{'source':key,'root':path.resolve().as_posix(),'nas_root':remote_roots.get(key)} for key,path in new_sources.items()],
-                'message': '配置已保存。自动检查、扫描间隔和稳定等待已生效；监控范围在下一轮扫描生效。CPU/图片解码线程、处理批次和保存进度设置需重启应用。'}
+                'message': '配置已保存。自动检查、扫描间隔和稳定等待已生效；监控范围在下一轮扫描生效。推理设备、精度、线程、处理批次和保存进度设置需重启应用。'}
 
     @app.get('/api/settings/compose')
     def settings_compose(request: Request):

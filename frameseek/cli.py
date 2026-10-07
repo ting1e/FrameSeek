@@ -43,6 +43,8 @@ def main():
     prepare = sub.add_parser("prepare-model")
     prepare.add_argument("--revision", default="main")
     prepare.add_argument("--existing", action="store_true", help="Validate an existing official Hugging Face model directory")
+    prepare_ov = sub.add_parser('prepare-openvino', help='Convert the verified DINOv3 model for Intel inference')
+    prepare_ov.add_argument('--output', help='OpenVINO model directory; defaults to the configured companion directory')
     inventory = sub.add_parser("inventory")
     inventory.add_argument("--output", default="reports/nas-inventory.jsonl")
     sync = sub.add_parser("sync")
@@ -80,6 +82,10 @@ def main():
     if os.getenv('IMGS_AUTH_FILE'):
         load_dotenv(os.environ['IMGS_AUTH_FILE'], override=False)
     settings = Settings()
+    if args.command == 'prepare-openvino':
+        from .inference import export_openvino
+        print(json.dumps(export_openvino(settings, args.output), indent=2))
+        return
     if args.command == "prepare-model":
         from .model import create_manifest, prepare_model
         result = create_manifest(settings.model) if args.existing else prepare_model(settings.model, args.revision)

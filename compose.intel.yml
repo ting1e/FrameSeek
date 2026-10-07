@@ -1,0 +1,12 @@
+# Optional Intel GPU access, used with compose.yml or compose.ghcr.yml.
+# Set IMGS_RENDER_GID to: stat -c '%g' /dev/dri/renderD128
+services:
+  app:
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - ${IMGS_RENDER_GID:?Set IMGS_RENDER_GID to the host renderD128 group ID}
+    environment:
+      IMGS_OPENVINO_MODEL: /models/dinov3-openvino
+    volumes:
+      - ./models/dinov3-vitl16-openvino:/models/dinov3-openvino:ro

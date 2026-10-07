@@ -367,17 +367,39 @@ function parseMonitorDirectories(text) {
   return directories;
 }
 let monitorSources = [], savedSettings = {};
-const settingsControls = {cpu_threads:"config-cpu-threads",decode_workers:"config-decode-workers",batch:"config-batch",chunk_frames:"config-chunk",scan_interval_seconds:"config-interval",stable_seconds:"config-stable",auto_update:"config-auto-update",default_top:"config-top",collapse_results:"config-collapse"};
+const settingsControls = {device:"config-device",precision:"config-precision",cpu_threads:"config-cpu-threads",decode_workers:"config-decode-workers",batch:"config-batch",chunk_frames:"config-chunk",scan_interval_seconds:"config-interval",stable_seconds:"config-stable",auto_update:"config-auto-update",default_top:"config-top",collapse_results:"config-collapse"};
+let inferenceOptions = [];
+function inferenceDeviceHelp() {
+  const selected = inferenceOptions.find(option => option.value === $("config-device").value);
+  $("inference-device-help").textContent = selected?.reason || ($("config-device").value.startsWith("openvino:") ? "Intel 核显当前逐张推理，批次设置不会增加核显并行数。" : "");
+  const device = $("config-device").value, precision = $("config-precision").value;
+  $("inference-precision-help").textContent = precision === "fp32" ? "完整精度计算；输出向量保存为 float32。" :
+    (device === "cpu" || device === "openvino:CPU") ? "CPU 使用 FP16 不一定更快；输出向量仍为 float32。" :
+    device.startsWith("openvino:") ? "混合精度，核显启用激活缩放；输出向量仍为 float32。" :
+    "混合精度计算；输出向量仍为 float32，速度以实际任务为准。";
+}
+$("config-device").addEventListener("change", inferenceDeviceHelp);
+$("config-precision").addEventListener("change", inferenceDeviceHelp);
 async function loadSettings(initial = false) {
   if (settingsAutoSave.dirty) return;
   const data = await api("/api/settings");
   if (settingsAutoSave.dirty) return;
+  inferenceOptions = data.inference_options || [{value:"cpu",label:"CPU",available:true}];
+  if (!inferenceOptions.some(option => option.value === data.saved.device)) inferenceOptions.push({value:data.saved.device,label:data.saved.device,available:false,reason:"当前设备不可用"});
+  $("config-device").replaceChildren(...inferenceOptions.map(item => {
+    const option = document.createElement("option"); option.value = item.value;
+    option.textContent = item.label + (item.available ? "" : "（不可用）"); option.disabled = !item.available;
+    return option;
+  }));
   for (const [name,id] of Object.entries(settingsControls)) {
     const input = $(id); if (input.type === "checkbox") input.checked = data.saved[name];
     else input.value = name === "scan_interval_seconds" ? data.saved[name] / 60 : data.saved[name];
   }
   savedSettings = data.saved;
-  $("settings-message").textContent = data.restart_required ? "已保存；线程、处理批次或保存进度设置需重启应用。" : "";
+  const runningDevice = inferenceOptions.find(option => option.value === data.running.device)?.label || data.running.device;
+  $("inference-running").textContent = `当前运行：${runningDevice} / ${data.running.precision.toUpperCase()}`;
+  inferenceDeviceHelp();
+  $("settings-message").textContent = data.restart_required ? "已保存；推理设备、精度、线程或批次设置需重启应用。" : "";
   monitorSources = data.source_directories;
   $("monitor-directories").value = data.monitor_directories.join("\n");
   if (initial) { $("top").value = data.saved.default_top; $("collapse").checked = data.saved.collapse_results; }
@@ -415,14 +437,14 @@ function createAutoSave(formId, messageId, save) {
 }
 const settingsAutoSave = createAutoSave("settings-form", "settings-message", async () => {
   const values = {...savedSettings};
-  for (const [name,id] of Object.entries(settingsControls)) { const input = $(id); values[name] = input.type === "checkbox" ? input.checked : Number(input.value); }
+  for (const [name,id] of Object.entries(settingsControls)) { const input = $(id); values[name] = input.type === "checkbox" ? input.checked : (["device","precision"].includes(name) ? input.value : Number(input.value)); }
   values.monitor_directories = parseMonitorDirectories($("monitor-directories").value);
   values.scan_interval_seconds *= 60;
   const result = await api("/api/settings", {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(values)});
   monitorSources = result.source_directories;
   savedSettings = values;
   $("top").value = values.default_top; $("collapse").checked = values.collapse_results;
-  return result.restart_required ? "已保存；线程、处理批次或保存进度设置需重启应用。" : "已保存；监控目录在下一轮扫描生效。";
+  return result.restart_required ? "已保存；推理设备、精度、线程或批次设置需重启应用。" : "已保存；监控目录在下一轮扫描生效。";
 });
 
 async function loadEmbySettings() {
