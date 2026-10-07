@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageOps
 
-from .config import DIMENSION, MODEL_ID, Settings
+from frameseek.core.config import DIMENSION, MODEL_ID, Settings
 
 
 def digest(path: Path) -> str:
@@ -103,7 +103,7 @@ class Embedder:
             v2.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         ])
         if self.settings.device.startswith('openvino:'):
-            from .inference import load_openvino
+            from frameseek.engine.inference import load_openvino
             self.openvino = load_openvino(self.settings)
             self.net = self.openvino
             # The validated Intel model has a fixed one-image input.

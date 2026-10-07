@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from qdrant_client import QdrantClient, models
 
-from .config import DIMENSION, Settings
+from frameseek.core.config import DIMENSION, Settings
 
 
 class VectorStore:

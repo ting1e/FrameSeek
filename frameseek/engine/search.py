@@ -6,15 +6,15 @@ import time
 
 from PIL import Image
 
-from .config import Settings
-from .db import Database
-from .indexer import BackgroundWorker, Indexer
-from .model import Embedder
-from .paths import canonical_mtime, media_path
-from .vectors import VectorStore
-from .scope import validate_scope, scope_file_ids
-from .progress import ProcessingProgress
-from .images import validate_media_type
+from frameseek.core.config import Settings
+from frameseek.core.db import Database
+from frameseek.engine.indexer import BackgroundWorker, Indexer
+from frameseek.engine.model import Embedder
+from frameseek.core.paths import canonical_mtime, media_path
+from frameseek.engine.vectors import VectorStore
+from frameseek.media.scope import validate_scope, scope_file_ids
+from frameseek.engine.progress import ProcessingProgress
+from frameseek.media.images import validate_media_type
 
 
 def fold(rows: list[dict]) -> list[dict]:
@@ -38,8 +38,8 @@ class Runtime:
     def __init__(self, settings: Settings, embedder=None, store=None):
         self.settings = settings
         self.db = Database(settings.db_path)
-        from .media import remember_sources
-        from .remote import roots
+        from frameseek.media.directories import remember_sources
+        from frameseek.integrations.remote import roots
         remember_sources(settings, self.db, roots())
         self.embedder = embedder or Embedder(settings)
         self.store = store

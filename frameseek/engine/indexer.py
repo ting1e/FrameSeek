@@ -10,15 +10,15 @@ from pathlib import Path
 
 import numpy as np
 
-from . import bif
-from .config import DIMENSION, Settings
-from .db import Database
-from .decode import decoded_batches, prepared_batches
-from .model import Embedder, digest
-from .paths import canonical_mtime, media_path, original_relative
-from .vectors import VectorStore
-from .monitoring import folders, includes, visit_directory, sql_scope
-from .images import supported, media_type, MAX_IMAGE_BYTES
+from frameseek.media import bif
+from frameseek.core.config import DIMENSION, Settings
+from frameseek.core.db import Database
+from frameseek.media.decode import decoded_batches, prepared_batches
+from frameseek.engine.model import Embedder, digest
+from frameseek.core.paths import canonical_mtime, media_path, original_relative
+from frameseek.engine.vectors import VectorStore
+from frameseek.engine.monitoring import folders, includes, visit_directory, sql_scope
+from frameseek.media.images import supported, media_type, MAX_IMAGE_BYTES
 
 
 def file_id(source: str, relative: str) -> str:
@@ -57,7 +57,7 @@ class Indexer:
     def path(self, source: str, relative: str) -> Path:
         return media_path(self.settings.sources[source], relative, self.settings.escaped_paths)
 
-    def scan(self, trust_stable: bool = False) -> dict:
+    def scan(self, trust_stable: bool = False, changes: set[tuple[str, str]] | None = None) -> dict:
         with self.operation_lock:
             marker, now = str(uuid.uuid4()), time.time()
             counts = {"observed": 0, "modified": 0, "queued": 0, "deleted": 0, "scan_errors": 0}
@@ -65,6 +65,9 @@ class Indexer:
             sources = dict(self.settings.sources)
             registered_roots = {root.resolve():source for source,root in sources.items()}
             for source, root in sources.items():
+                targets = {relative for name, relative in changes if name == source} if changes is not None else None
+                if targets is not None and not targets:
+                    continue
                 selected = [item for item in scope if item['source'] == source]
                 if not selected:
                     continue
@@ -82,7 +85,9 @@ class Indexer:
                             failures.append(f'Monitored folder unavailable: {source}/{item["path"]}')
                     except (OSError, ValueError) as error:
                         failures.append(str(error))
-                for directory, subdirs, filenames in os.walk(root, onerror=onerror, followlinks=False):
+                entries = os.walk(root, onerror=onerror, followlinks=False) if targets is None else (
+                    (self.path(source, relative).parent, [], [self.path(source, relative).name]) for relative in targets)
+                for directory, subdirs, filenames in entries:
                     subdirs[:] = [d for d in subdirs if not Path(directory, d).is_symlink() and
                                   registered_roots.get(Path(directory, d).resolve(), source) == source and
                                   visit_directory(scope, source, original_relative(root, Path(directory, d), self.settings.escaped_paths))]
@@ -126,6 +131,10 @@ class Indexer:
                             if not current["desired_version"] and (trust_stable or now - current["stable_since"] >= self.settings.stable_seconds):
                                 self.queue_file(ident, path, stamp)
                                 counts["queued"] += 1
+                        except FileNotFoundError:
+                            # A delete/rename event is reconciled by the unseen-record pass below.
+                            if targets is None:
+                                failures.append(f'File disappeared during scan: {path}')
                         except Exception as error:
                             failures.append(f"{path}: {error}")
                             if ident is not None:
@@ -135,8 +144,14 @@ class Indexer:
                     for error in failures[:20]:
                         self.db.event("scan_error", error)
                 else:
-                    unseen = self.db.rows("SELECT * FROM files WHERE source=? AND seen!=? AND status!='deleted'", (source, marker))
+                    if targets is None:
+                        unseen = self.db.rows("SELECT * FROM files WHERE source=? AND seen!=? AND status!='deleted'", (source, marker))
+                    else:
+                        unseen = [row for relative in targets if (row := self.db.one(
+                            "SELECT * FROM files WHERE id=? AND seen!=? AND status!='deleted'", (file_id(source, relative), marker)))]
                     for row in unseen:
+                        if targets is not None and row['relpath'] not in targets:
+                            continue
                         if not includes(scope, source, row['relpath']):
                             continue
                         if not includes(folders(self.settings, self.db), source, row['relpath']):
@@ -146,8 +161,9 @@ class Indexer:
                                 c.execute("INSERT OR IGNORE INTO deletions VALUES(?,?)", (version, now))
                             c.execute("UPDATE files SET status='deleted',active_version=NULL,desired_version=NULL WHERE id=?", (row["id"],))
                         counts["deleted"] += 1
-            self.db.execute("INSERT OR REPLACE INTO meta VALUES('last_scan',?)", (str(now),))
-            self.db.event("scan", json.dumps(counts, ensure_ascii=False))
+            if changes is None:
+                self.db.execute("INSERT OR REPLACE INTO meta VALUES('last_scan',?)", (str(now),))
+            self.db.event("scan" if changes is None else "watch_update", json.dumps(counts, ensure_ascii=False))
             return counts
 
     def queue_file(self, ident: str, path: Path, stamp):
@@ -360,6 +376,8 @@ class BackgroundWorker:
         self.activity = "idle"
         self.error: str | None = None
         self.manual_active = False
+        from frameseek.engine.watcher import MediaWatcher
+        self.watcher = MediaWatcher(runtime.settings, runtime.db, self.wake_event)
 
     def start(self):
         self.thread = threading.Thread(target=self.run, daemon=True, name="bif-indexer")
@@ -371,6 +389,7 @@ class BackgroundWorker:
         self.wake_event.set()
         if self.thread:
             self.thread.join(timeout=120)
+        self.watcher.stop()
 
     def configuration_changed(self):
         self.config_event.set()
@@ -386,6 +405,7 @@ class BackgroundWorker:
             if self.config_event.is_set():
                 self.config_event.clear()
                 next_scan = 0.0
+            self.watcher.configure(self.runtime.settings.auto_update)
             paused = self.runtime.db.one("SELECT value FROM meta WHERE key='paused'")
             if paused and paused["value"] == "true":
                 self.activity = "paused"
@@ -401,24 +421,29 @@ class BackgroundWorker:
                 continue
             try:
                 indexer = self.runtime.get_indexer()
-                if manual or time.time() >= next_scan:
+                changed, directory_changed = self.watcher.drain()
+                if manual or directory_changed or time.time() >= next_scan:
                     self.scan_event.clear()
                     self.activity = "scanning"
                     indexer.scan()
-                    # Revisit unstable newly observed files without waiting ten minutes.
-                    condition, arguments = indexer.scope_filter()
-                    unstable = self.runtime.db.one(f"SELECT MIN(f.stable_since) AS t FROM files f WHERE desired_version IS NULL AND status='observed' AND error IS NULL AND {condition}", arguments)
                     next_scan = time.time() + self.runtime.settings.interval
-                    if unstable and unstable["t"] is not None:
-                        next_scan = min(next_scan, max(time.time() + 2, unstable["t"] + self.runtime.settings.stable_seconds))
+                else:
+                    condition, arguments = indexer.scope_filter()
+                    stable = self.runtime.db.rows(f"SELECT f.source,f.relpath FROM files f WHERE desired_version IS NULL AND status='observed' AND error IS NULL AND stable_since<=? AND {condition} LIMIT 256",
+                        [time.time()-self.runtime.settings.stable_seconds, *arguments])
+                    changed.update((row['source'],row['relpath']) for row in stable)
+                    if changed:
+                        self.activity = 'checking_changes'
+                        indexer.scan(changes=changed)
+                self.wake_event.clear()
                 for job in indexer.pending():
                     paused = self.runtime.db.one("SELECT value FROM meta WHERE key='paused'")
                     if (self.stop_event.is_set() or (paused and paused['value'] == 'true')
-                            or self.scan_event.is_set() or self.config_event.is_set() or time.time() >= next_scan):
+                            or self.scan_event.is_set() or self.config_event.is_set() or self.watcher.has_pending or time.time() >= next_scan):
                         break
                     self.activity = f"indexing:{job['file_id']}"
                     try:
-                        indexer.process_version(job["id"], self.stop_event, yield_at=next_scan, yield_requested=self.config_event)
+                        indexer.process_version(job["id"], self.stop_event, yield_at=next_scan, yield_requested=self.wake_event)
                     except Exception as error:
                         self.error = str(error)
                 self.activity = "cleanup"

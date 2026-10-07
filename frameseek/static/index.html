@@ -58,9 +58,9 @@
             <label>图片解码线程数<input id="config-decode-workers" class="input" type="number" min="1" max="16" required><small>NAS 建议 1 个线程。</small></label>
             <label>每批处理帧数<input id="config-batch" class="input" type="number" min="1" max="32" required><small>NAS CPU 建议 1 帧。</small></label>
             <label>每次保存进度的帧数<input id="config-chunk" class="input" type="number" min="1" max="1024" required><small>CPU 建议 64 帧；越小越快响应暂停。</small></label>
-            <label>检查文件变动的间隔（分钟）<input id="config-interval" class="input" type="number" min="1" max="1440" step="1" required><small>开启自动更新后生效。</small></label>
+            <label>目录补查间隔（小时）<input id="config-interval" class="input" type="number" min="0.0166666666" max="24" step="any" required><small>默认 24 小时，实时监听之外补齐遗漏。</small></label>
             <label>文件稳定等待时间（秒）<input id="config-stable" class="input" type="number" min="0" max="3600" required><small>文件停止变化后再处理，建议 60 秒。</small></label>
-          </div><label class="settings-toggle"><input id="config-auto-update" class="toggle toggle-primary" type="checkbox"><span>自动检查并处理新增或修改的 BIF 和图片</span></label></div></div>
+          </div><label class="settings-toggle"><input id="config-auto-update" class="toggle toggle-primary" type="checkbox"><span>实时监听并自动更新 BIF 和图片</span></label></div></div>
           <div class="card bg-base-100 settings-card"><div class="card-body"><h2>搜索默认值</h2><div class="settings-fields"><label>每次返回结果数<select id="config-top" class="select"><option value="20">20 条</option><option value="50">50 条</option><option value="100">100 条</option><option value="200">200 条</option><option value="500">500 条</option></select></label></div><label class="settings-toggle"><input id="config-collapse" class="toggle toggle-primary" type="checkbox"><span>默认合并同一 BIF 的所有命中</span></label></div></div>
           <div class="settings-save"><p id="settings-message" role="status" aria-live="polite"></p></div>
         </form>

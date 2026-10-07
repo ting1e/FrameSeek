@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 
 def init_environment(destination: Path):
-    from .auth import password_hash
+    from frameseek.core.auth import password_hash
     if destination.exists():
         raise RuntimeError("Environment file already exists; refusing to overwrite credentials")
     password = secrets.token_urlsafe(18)
@@ -32,7 +32,7 @@ def init_environment(destination: Path):
 
 
 def main():
-    from .console import configure_console
+    from frameseek.core.console import configure_console
     configure_console()
     load_dotenv(Path.cwd() / '.env', override=False)
     parser = argparse.ArgumentParser(prog="frameseek")
@@ -70,7 +70,7 @@ def main():
     backup.add_argument("--destination", default="data/backups")
     args = parser.parse_args()
     if args.command == 'bootstrap':
-        from .bootstrap import initialize
+        from frameseek.tools.bootstrap import initialize
         initialize(Path(os.getenv('IMGS_DATA', '/data')), Path(os.getenv('IMGS_MODEL', '/models/dinov3')),
                    os.getenv('IMGS_USERNAME', 'admin'),
                    {key:os.getenv(key, '') for key in ('IMGS_PASSWORD_HASH','IMGS_SESSION_SECRET','IMGS_QDRANT_KEY')})
@@ -78,21 +78,21 @@ def main():
     if args.command == "init":
         init_environment(Path(args.env_file))
         return
-    from .config import Settings
+    from frameseek.core.config import Settings
     if os.getenv('IMGS_AUTH_FILE'):
         load_dotenv(os.environ['IMGS_AUTH_FILE'], override=False)
     settings = Settings()
     if args.command == 'prepare-openvino':
-        from .inference import export_openvino
+        from frameseek.engine.inference import export_openvino
         print(json.dumps(export_openvino(settings, args.output), indent=2))
         return
     if args.command == "prepare-model":
-        from .model import create_manifest, prepare_model
+        from frameseek.engine.model import create_manifest, prepare_model
         result = create_manifest(settings.model) if args.existing else prepare_model(settings.model, args.revision)
         print(json.dumps(result, indent=2))
         return
     if args.command in {"inventory", "sync"}:
-        from .sync import connect, inventory, sync
+        from frameseek.integrations.sync import connect, inventory, sync
         with connect() as connection:
             result = inventory(connection, Path(args.output)) if args.command == "inventory" else sync(
                 connection, Path(args.manifest), Path(args.destination), settings.escaped_paths, args.limit_files)
@@ -100,18 +100,18 @@ def main():
         if result.get("errors"):
             raise SystemExit(2)
         return
-    from .search import Runtime
+    from frameseek.engine.search import Runtime
     runtime = Runtime(settings)
     try:
         if args.command == "serve":
             import uvicorn
-            from .web import create_app
+            from frameseek.web import create_app
             uvicorn.run(create_app(settings, runtime), host=args.host, port=args.port,
                         proxy_headers=True, forwarded_allow_ips=os.getenv("IMGS_PROXY_IPS", "127.0.0.1"))
         elif args.command == "status":
             print(json.dumps({**runtime.db.stats(), 'scope': runtime.get_indexer().scope_stats()}, ensure_ascii=False, indent=2))
         elif args.command == 'export-config':
-            from .preferences import requested, compose_override
+            from frameseek.core.preferences import requested, compose_override
             Path(args.output).write_text(compose_override(requested(settings, runtime.db)), encoding='utf-8')
             print('Deployment settings exported to', Path(args.output).resolve())
         elif args.command in {"pause", "resume"}:
@@ -128,7 +128,7 @@ def main():
             if args.retry:
                 runtime.db.execute("UPDATE versions SET retry_at=0 WHERE status='failed'")
             if args.verify_only:
-                from .model import digest
+                from frameseek.engine.model import digest
                 chunks = runtime.db.rows("SELECT * FROM chunks")
                 for chunk in chunks:
                     if digest(settings.data / chunk["path"]) != chunk["sha256"]:

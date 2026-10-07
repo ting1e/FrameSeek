@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
-from frameseek.auth import Auth
+from frameseek.core.auth import Auth
 from frameseek.web import create_app
 
 
@@ -24,7 +24,7 @@ def test_concurrent_bad_logins_cannot_bypass_limit(runtime, monkeypatch):
         calls.append(1)
         time.sleep(.03)
         return False
-    monkeypatch.setattr('frameseek.auth.verify_password', wrong_password)
+    monkeypatch.setattr('frameseek.core.auth.verify_password', wrong_password)
     def attempt(_):
         barrier.wait()
         try:
@@ -39,7 +39,7 @@ def test_concurrent_bad_logins_cannot_bypass_limit(runtime, monkeypatch):
 
 def test_single_account_limit_survives_changing_proxy_address(runtime, monkeypatch):
     auth = Auth(runtime.settings, runtime.db)
-    monkeypatch.setattr('frameseek.auth.verify_password', lambda *args:False)
+    monkeypatch.setattr('frameseek.core.auth.verify_password', lambda *args:False)
     statuses = []
     for i in range(6):
         try:

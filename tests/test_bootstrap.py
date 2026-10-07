@@ -7,10 +7,10 @@ import pytest
 from dotenv import dotenv_values
 from safetensors.numpy import save_file
 
-from frameseek.auth import verify_password
-from frameseek.bootstrap import initialize
-from frameseek.config import Settings
-from frameseek.model import create_manifest
+from frameseek.core.auth import verify_password
+from frameseek.tools.bootstrap import initialize
+from frameseek.core.config import Settings
+from frameseek.engine.model import create_manifest
 
 
 def manual_model(path):

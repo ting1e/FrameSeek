@@ -12,9 +12,9 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 
-from .config import Settings
-from .model import digest
-from .search import Runtime
+from frameseek.core.config import Settings
+from frameseek.engine.model import digest
+from frameseek.engine.search import Runtime
 
 
 def verify(folder: Path) -> dict:
@@ -70,8 +70,8 @@ def build(settings: Settings, destination: Path, allow_pending: bool = False) ->
                     shutil.copy2(src,model_dir/name)
             (model_dir/'manifest.json').write_text(json.dumps(settings.manifest,ensure_ascii=False,indent=2),encoding='utf-8')
             for name in ['compose.ghcr.yml','compose.yml','compose.local.yml','Dockerfile','pyproject.toml','README.md']:
-                shutil.copy2(Path(__file__).parent.parent/name,destination/name)
-            shutil.copytree(Path(__file__).parent,destination/'frameseek',ignore=shutil.ignore_patterns('__pycache__'))
+                shutil.copy2(Path(__file__).resolve().parents[2]/name,destination/name)
+            shutil.copytree(Path(__file__).resolve().parents[1],destination/'frameseek',ignore=shutil.ignore_patterns('__pycache__'))
             manifest = {'created':time.time(),'model_fingerprint':settings.manifest['fingerprint'],
                         'collection':store.collection,'qdrant_version':'1.19.2','stats':stats,
                         'preflight_only':bool(stats['pending']),'deployment_requires_user_approval':True,
@@ -89,7 +89,7 @@ def restore(settings: Settings, folder: Path):
         raise ValueError('Restore requires a fresh application data directory')
     if settings.manifest['fingerprint'] != checked['model_fingerprint']:
         raise ValueError('Install the matching release model before restore')
-    from .vectors import VectorStore
+    from frameseek.engine.vectors import VectorStore
     store = VectorStore(settings,checked['model_fingerprint'])
     try:
         if store.client.collection_exists(store.collection):
@@ -111,7 +111,7 @@ def restore(settings: Settings, folder: Path):
 
 
 def main():
-    from .console import configure_console
+    from frameseek.core.console import configure_console
     configure_console()
     load_dotenv(Path.cwd() / '.env')
     if os.getenv('IMGS_AUTH_FILE'):

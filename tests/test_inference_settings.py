@@ -5,9 +5,9 @@ import numpy as np
 import pytest
 import torch
 
-from frameseek.config import Settings
-from frameseek.inference import check_openvino_manifest, load_openvino
-from frameseek.model import Embedder, digest
+from frameseek.core.config import Settings
+from frameseek.engine.inference import check_openvino_manifest, load_openvino
+from frameseek.engine.model import Embedder, digest
 from test_web import client, login
 
 
@@ -28,7 +28,7 @@ def test_precision_persists_and_only_applies_after_restart(runtime, client):
 
 
 def test_unavailable_gpu_cannot_be_saved_and_old_clients_preserve_precision(runtime, client, monkeypatch):
-    monkeypatch.setattr('frameseek.inference.hardware_devices', lambda: ([], []))
+    monkeypatch.setattr('frameseek.engine.inference.hardware_devices', lambda: ([], []))
     headers = login(client)
     before = client.get('/api/settings').json()['saved']
     result = client.put('/api/settings', json={**before, 'device': 'openvino:GPU'}, headers=headers)
@@ -41,7 +41,7 @@ def test_unavailable_gpu_cannot_be_saved_and_old_clients_preserve_precision(runt
 
 
 def test_legacy_saved_settings_keep_explicit_cuda_device(runtime):
-    from frameseek.preferences import current, requested
+    from frameseek.core.preferences import current, requested
     old = current(runtime.settings)
     old.pop('device'); old.pop('precision')
     runtime.db.execute("INSERT OR REPLACE INTO meta VALUES('runtime_preferences',?)", (json.dumps(old),))
@@ -52,7 +52,7 @@ def test_legacy_saved_settings_keep_explicit_cuda_device(runtime):
 
 
 def test_gpu_and_precision_can_be_selected_together_without_changing_running_model(runtime, client, monkeypatch):
-    monkeypatch.setattr('frameseek.inference.hardware_devices', lambda: (['Test GPU'], []))
+    monkeypatch.setattr('frameseek.engine.inference.hardware_devices', lambda: (['Test GPU'], []))
     headers = login(client)
     initial = client.get('/api/settings').json()
     assert any(option['value'] == 'cuda' and option['available'] for option in initial['inference_options'])

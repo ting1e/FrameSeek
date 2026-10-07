@@ -6,9 +6,9 @@ from PIL import Image
 
 from fastapi.testclient import TestClient
 from conftest import build, jpeg, write_bif
-from frameseek.config import Settings
-from frameseek.media import plan_directories, remember_sources
-from frameseek.search import Runtime
+from frameseek.core.config import Settings
+from frameseek.media.directories import plan_directories, remember_sources
+from frameseek.engine.search import Runtime
 from frameseek.web import create_app
 
 

@@ -1,6 +1,6 @@
 from collections import Counter
 from pathlib import PurePosixPath
-from .images import validate_media_type
+from frameseek.media.images import validate_media_type
 
 
 def validate_scope(sources, source='', directory=''):

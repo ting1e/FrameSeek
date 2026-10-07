@@ -103,7 +103,7 @@ def test_bad_upload_wrong_top_and_limit(client):
 
 
 def test_arbitrary_media_directory_roundtrip_search_and_settings(runtime, tmp_path):
-    from frameseek.config import directory_sources, Settings
+    from frameseek.core.config import directory_sources, Settings
     import json
     runtime.settings.sources = directory_sources(json.dumps([str(tmp_path / '媒体目录')]))
     source, root = next(iter(runtime.settings.sources.items()))
@@ -163,7 +163,7 @@ def test_search_history_persisted_and_authenticated(runtime, client):
     thumbnail = client.get(detail['thumbnail_url'])
     assert thumbnail.headers['content-type'] == 'image/jpeg'
     assert thumbnail.content.startswith(b'\xff\xd8')
-    from frameseek.db import Database
+    from frameseek.core.db import Database
     reopened = Database(runtime.settings.db_path)
     assert reopened.one('SELECT id FROM search_history')['id'] == history_id
     client.post('/api/logout', headers=headers)
@@ -210,7 +210,7 @@ def test_settings_validation_persistence_and_export(runtime, client):
     assert state['saved']['cpu_threads'] == 2
     assert state['running']['cpu_threads'] == 4
     assert runtime.settings.default_top == 50
-    from frameseek.config import Settings
+    from frameseek.core.config import Settings
     restarted = Settings(data=runtime.settings.data)
     assert restarted.cpu_threads == 2
     assert restarted.qdrant_memory_gib == runtime.settings.qdrant_memory_gib
@@ -233,7 +233,7 @@ def test_docker_mode_is_not_overridden_by_saved_preferences(runtime, client, mon
     assert saved['mode'] == runtime.settings.mode
     assert saved['qdrant_memory_gib'] == runtime.settings.qdrant_memory_gib
     monkeypatch.setenv('IMGS_MODE', 'high_memory')
-    from frameseek.config import Settings
+    from frameseek.core.config import Settings
     restarted = Settings(data=runtime.settings.data)
     assert restarted.mode == 'high_memory'
     assert restarted.qdrant_memory_gib == 12
@@ -271,8 +271,8 @@ def test_large_search_result_limits(runtime, client, top):
 
 
 def test_directory_scope_and_duration(runtime, client):
-    from frameseek.bif import parse
-    from frameseek.scope import directories
+    from frameseek.media.bif import parse
+    from frameseek.media.scope import directories
     selected = write_bif(runtime.settings.sources['sda'] / '剧集' / '子目录' / 'one.bif')
     write_bif(runtime.settings.sources['sda'] / '剧集备份' / 'other.bif')
     write_bif(runtime.settings.sources['sdc'] / '剧集' / 'same.bif')
@@ -314,7 +314,7 @@ def test_directory_scope_and_duration(runtime, client):
 
 
 def test_directory_list_limit_and_zero_duration(runtime):
-    from frameseek.scope import directories
+    from frameseek.media.scope import directories
     class DirectoryDB:
         def rows(self, *args):
             return [{'source':'sda','relpath':f'dir-{number:03}/movie.bif'} for number in range(60)]

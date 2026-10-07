@@ -10,8 +10,8 @@ import numpy as np
 from dotenv import load_dotenv
 from PIL import Image
 
-from .config import Settings
-from .search import Runtime
+from frameseek.core.config import Settings
+from frameseek.engine.search import Runtime
 
 
 def matches(hit: dict, label: dict) -> bool:
@@ -64,7 +64,7 @@ def evaluate(runtime: Runtime, labels: list[dict], base: Path) -> dict:
 
 
 def main():
-    from .console import configure_console
+    from frameseek.core.console import configure_console
     configure_console()
     load_dotenv()
     parser = argparse.ArgumentParser()

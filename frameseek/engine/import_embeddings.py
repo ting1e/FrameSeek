@@ -12,10 +12,10 @@ from pathlib import Path
 import numpy as np
 from qdrant_client import models
 
-from . import bif
-from .indexer import file_id, frame_id
-from .model import digest
-from .paths import canonical_mtime
+from frameseek.media import bif
+from frameseek.engine.indexer import file_id, frame_id
+from frameseek.engine.model import digest
+from frameseek.core.paths import canonical_mtime
 
 
 def load_export(export: Path, fingerprint: str):
@@ -212,9 +212,9 @@ def import_export(runtime, export: Path, output: Path):
 
 def main():
     from dotenv import load_dotenv
-    from .config import Settings
-    from .console import configure_console
-    from .search import Runtime
+    from frameseek.core.config import Settings
+    from frameseek.core.console import configure_console
+    from frameseek.engine.search import Runtime
     configure_console()
     load_dotenv('.env')
     parser = argparse.ArgumentParser()
@@ -224,7 +224,7 @@ def main():
     args = parser.parse_args()
     settings = Settings()
     if args.grpc_port:
-        from .vectors import VectorStore
+        from frameseek.engine.vectors import VectorStore
         store = VectorStore(settings, settings.manifest['fingerprint'], grpc_port=args.grpc_port)
         store.ensure(apply_mode=False)
         runtime = Runtime(settings, store=store)

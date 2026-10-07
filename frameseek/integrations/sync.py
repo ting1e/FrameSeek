@@ -10,9 +10,9 @@ from pathlib import Path
 
 import paramiko
 
-from .model import digest
-from .paths import media_path
-from .remote import configuration, roots
+from frameseek.engine.model import digest
+from frameseek.core.paths import media_path
+from frameseek.integrations.remote import configuration, roots
 
 # Compatibility for local tools; values come only from the ignored private file.
 NAS_ROOTS = roots()

@@ -1,5 +1,5 @@
 """Source-relative monitoring scope, independent of retained search data."""
-from .preferences import requested
+from frameseek.core.preferences import requested
 
 
 def folders(settings, db):

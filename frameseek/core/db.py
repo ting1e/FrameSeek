@@ -138,7 +138,7 @@ class Database:
     def add_durations(self, results):
         for row in results:
             if 'media_type' not in row:
-                from .images import media_type
+                from frameseek.media.images import media_type
                 row['media_type'] = media_type(row.get('relpath', ''))
             if row['media_type'] == 'image':
                 row['duration_ms'] = None

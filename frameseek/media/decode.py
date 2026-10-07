@@ -7,8 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image, ImageOps
 
-from . import bif
-from .images import IMAGE_FORMATS, read_image
+from frameseek.media import bif
+from frameseek.media.images import IMAGE_FORMATS, read_image
 
 
 def decode_frame(path, frame):

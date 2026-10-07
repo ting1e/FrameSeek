@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import re
 
-from .paths import media_path
+from frameseek.core.paths import media_path
 
 REGISTRY_KEY = 'media_registry'
 
@@ -67,7 +67,7 @@ def monitor_directories(settings, folders):
 
 
 def plan_directories(settings, db, directories, aliases=None):
-    from .config import directory_sources
+    from frameseek.core.config import directory_sources
     import hashlib
     sources = dict(settings.sources)
     registry = registry_for(settings, db, aliases)

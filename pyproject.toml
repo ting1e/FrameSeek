@@ -12,7 +12,7 @@ dependencies = [
   "qdrant-client==1.19.1", "numpy>=1.26,<2.3", "Pillow>=10.4,<13",
   "transformers==5.18.0", "safetensors==0.8.0", "huggingface-hub==1.33.0",
   "paramiko==5.0.0", "httpx==0.28.1", "python-dotenv==1.2.4", "portalocker==3.2.0",
-  "openvino==2026.4.1"
+  "openvino==2026.4.1", "watchdog==6.0.0"
 ]
 
 [project.optional-dependencies]

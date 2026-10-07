@@ -10,14 +10,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw
 
-from .bif import read_frame
-from .config import Settings
-from .db import Database
-from .paths import media_path
+from frameseek.media.bif import read_frame
+from frameseek.core.config import Settings
+from frameseek.core.db import Database
+from frameseek.core.paths import media_path
 
 
 def main():
-    from .console import configure_console
+    from frameseek.core.console import configure_console
     configure_console()
     load_dotenv()
     parser = argparse.ArgumentParser()

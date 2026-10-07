@@ -3,7 +3,7 @@ import json
 import pytest
 
 from conftest import build, write_bif
-from frameseek.emby import Emby, EmbySettings, EmbyError
+from frameseek.integrations.emby import Emby, EmbySettings, EmbyError
 from frameseek.web import create_app
 from fastapi.testclient import TestClient
 
@@ -116,7 +116,7 @@ def test_emby_http_token_stays_in_header_and_errors_are_redacted(runtime, monkey
         assert request.url.path.startswith('/emby/')
         return httpx.Response(401, json={'message':'secret-key'})
     original = httpx.Client
-    monkeypatch.setattr('frameseek.emby.httpx.Client', lambda **kwargs: original(transport=httpx.MockTransport(handle), **kwargs))
+    monkeypatch.setattr('frameseek.integrations.emby.httpx.Client', lambda **kwargs: original(transport=httpx.MockTransport(handle), **kwargs))
     with pytest.raises(EmbyError, match='授权失败') as error:
         service.clients()
     assert 'secret-key' not in str(error.value)

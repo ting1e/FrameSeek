@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from frameseek.bif import BifError, parse, read_frame
-from frameseek.paths import canonical_mtime, media_path, escaped_part, original_relative
+from frameseek.media.bif import BifError, parse, read_frame
+from frameseek.core.paths import canonical_mtime, media_path, escaped_part, original_relative
 from conftest import write_bif
 
 

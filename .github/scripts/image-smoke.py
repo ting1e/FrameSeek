@@ -10,7 +10,7 @@ import urllib.request
 
 import torch
 from transformers import AutoModel
-from frameseek.remote import roots
+from frameseek.integrations.remote import roots
 import frameseek
 assert os.getuid() == 10001
 assert torch.version.cuda is None

@@ -12,13 +12,13 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from .bif import parse, read_frame
-from .config import Settings
-from .model import Embedder
+from frameseek.media.bif import parse, read_frame
+from frameseek.core.config import Settings
+from frameseek.engine.model import Embedder
 
 
 def main():
-    from .console import configure_console
+    from frameseek.core.console import configure_console
     configure_console()
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', default='cpu')

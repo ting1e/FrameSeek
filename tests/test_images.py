@@ -7,9 +7,9 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from conftest import build, jpeg, write_bif
-from frameseek.db import Database, SCHEMA
-from frameseek.emby import Emby, EmbyError
-from frameseek.indexer import Indexer
+from frameseek.core.db import Database, SCHEMA
+from frameseek.integrations.emby import Emby, EmbyError
+from frameseek.engine.indexer import Indexer
 from frameseek.web import create_app
 
 
@@ -158,7 +158,7 @@ def test_animated_image_indexes_first_frame_and_exif_orientation(runtime):
     build(runtime)
     assert runtime.get_store().count() == 1
     row = runtime.db.one('SELECT * FROM frames')
-    from frameseek.decode import decode_frame
+    from frameseek.media.decode import decode_frame
     _, decoded, error = decode_frame(path, {**row, 'media_type':'image'})
     assert not error and decoded.getpixel((0,0)) == (255,0,0)
     decoded.close()
@@ -175,7 +175,7 @@ def test_animated_image_indexes_first_frame_and_exif_orientation(runtime):
 @pytest.mark.skipif(os.getenv('IMGS_SERVER_TEST') != '1', reason='Local Qdrant integration is opt-in')
 def test_real_server_mixed_types_and_legacy_payload(runtime):
     from dotenv import dotenv_values
-    from frameseek.vectors import VectorStore
+    from frameseek.engine.vectors import VectorStore
     local = dotenv_values('.env')
     runtime.settings.qdrant_url = local['IMGS_QDRANT_URL']
     runtime.settings.qdrant_key = local['IMGS_QDRANT_KEY']

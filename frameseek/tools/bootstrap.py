@@ -10,8 +10,8 @@ import sqlite3
 from dotenv import dotenv_values
 import portalocker
 
-from .auth import password_hash
-from .model import create_manifest
+from frameseek.core.auth import password_hash
+from frameseek.engine.model import create_manifest
 
 
 KEYS = ('IMGS_PASSWORD_HASH', 'IMGS_SESSION_SECRET', 'IMGS_QDRANT_KEY')

@@ -16,7 +16,7 @@ def openvino_directory(settings) -> Path:
 
 
 def check_openvino_manifest(settings, verify=False):
-    from .model import digest
+    from frameseek.engine.model import digest
     directory = openvino_directory(settings)
     try:
         manifest = json.loads((directory / 'openvino-manifest.json').read_text(encoding='utf-8'))
@@ -87,7 +87,7 @@ def validate_inference_choice(settings, device):
 
 
 def export_openvino(settings, destination=None):
-    from .model import digest
+    from frameseek.engine.model import digest
     import torch
     import openvino as ov
     from transformers import AutoModel

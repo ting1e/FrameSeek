@@ -70,7 +70,7 @@ class Settings:
     chunk_frames: int = field(default_factory=lambda: int(os.getenv("IMGS_CHUNK_FRAMES", "64")))
     decode_workers: int = field(default_factory=lambda: int(os.getenv("IMGS_DECODE_WORKERS", "1")))
     index_scope: dict[str, list[str]] = field(default_factory=lambda: json.loads(os.getenv('IMGS_INDEX_SCOPE', '{}')))
-    interval: int = field(default_factory=lambda: int(os.getenv("IMGS_SCAN_INTERVAL", "600")))
+    interval: int = field(default_factory=lambda: int(os.getenv("IMGS_SCAN_INTERVAL", "86400")))
     stable_seconds: int = field(default_factory=lambda: int(os.getenv("IMGS_STABLE_SECONDS", "60")))
     auto_update: bool = field(default_factory=lambda: boolean("IMGS_AUTO_UPDATE", False))
     escaped_paths: bool = field(default_factory=lambda: boolean("IMGS_ESCAPED_PATHS", os.name == "nt"))
@@ -90,13 +90,13 @@ class Settings:
         # Directory IDs and roots travel with SQLite, independently of Compose.
         if self.db_path.exists():
             import sqlite3
-            from .preferences import Preferences, FIELDS, DOCKER_FIELDS
+            from frameseek.core.preferences import Preferences, FIELDS, DOCKER_FIELDS
             with sqlite3.connect(self.db_path, timeout=60) as connection:
                 has_meta = connection.execute("SELECT 1 FROM sqlite_master WHERE name='meta'").fetchone()
                 saved = connection.execute("SELECT value FROM meta WHERE key='runtime_preferences'").fetchone() if has_meta else None
                 registry = connection.execute("SELECT value FROM meta WHERE key='media_registry'").fetchone() if has_meta else None
             if registry:
-                from .media import restore_sources
+                from frameseek.media.directories import restore_sources
                 self.sources = restore_sources(json.loads(registry[0]), self.sources)
             if saved:
                 profile = json.loads(saved[0])
@@ -110,7 +110,7 @@ class Settings:
                         setattr(self, attribute, values[name])
         if self.mode not in {"low_memory", "high_memory"}:
             raise ValueError("IMGS_MODE must be low_memory or high_memory")
-        from .preferences import Preferences
+        from frameseek.core.preferences import Preferences
         Preferences(device=self.device, precision=self.precision)
         if self.batch < 1 or self.chunk_frames < 1 or self.interval < 1 or self.stable_seconds < 0:
             raise ValueError("Invalid batch/scan/stability settings")

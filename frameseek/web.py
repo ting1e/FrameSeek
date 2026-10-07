@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .scope import validate_scope, directories
+from frameseek.media.scope import validate_scope, directories
 
 import io
 import mimetypes
@@ -16,17 +16,17 @@ from pydantic import BaseModel, Field
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
-from . import bif
-from .auth import Auth
-from .config import Settings
-from .paths import media_path
-from .search import Runtime
-from .preferences import Preferences, WebPreferences, current, requested, compose_override, DOCKER_FIELDS
-from .media import REGISTRY_KEY, plan_directories, monitor_directories
-from .monitoring import folders, sql_scope
-from .emby import Emby, EmbySettings, EmbyError
-from .images import validate_media_type, IMAGE_FORMATS
-from .decode import decode_frame
+from frameseek.media import bif
+from frameseek.core.auth import Auth
+from frameseek.core.config import Settings
+from frameseek.core.paths import media_path
+from frameseek.engine.search import Runtime
+from frameseek.core.preferences import Preferences, WebPreferences, current, requested, compose_override, DOCKER_FIELDS
+from frameseek.media.directories import REGISTRY_KEY, plan_directories, monitor_directories
+from frameseek.engine.monitoring import folders, sql_scope
+from frameseek.integrations.emby import Emby, EmbySettings, EmbyError
+from frameseek.media.images import validate_media_type, IMAGE_FORMATS
+from frameseek.media.decode import decode_frame
 
 Image.MAX_IMAGE_PIXELS = 20_000_000
 MAX_UPLOAD = 10 * 1024 * 1024
@@ -90,7 +90,7 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
 
     app = FastAPI(title="FrameSeek", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.runtime = runtime
-    from .remote import roots
+    from frameseek.integrations.remote import roots
     remote_roots = roots()
     emby = Emby(runtime.db, {key:remote_roots.get(key, path.resolve().as_posix()) for key,path in settings.sources.items()})
     app.state.emby = emby
@@ -272,7 +272,7 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
         auth.require(request)
         desired = requested(settings, runtime.db)
         active = current(settings)
-        from .inference import inference_options
+        from frameseek.engine.inference import inference_options
         return {'saved': desired, 'running': active,
                 'monitor_directories': monitor_directories(settings, desired['monitor_folders']),
                 'source_directories': [{'source': source, 'root': root.resolve().as_posix(), 'nas_root': remote_roots.get(source)} for source, root in settings.sources.items()],
@@ -299,7 +299,7 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
         # Keep accepting legacy profiles, but container resources are owned by Compose.
         values = values.model_copy(update={name: current(settings)[name] for name in DOCKER_FIELDS})
         if (values.device, values.precision) != (previous['device'], previous['precision']):
-            from .inference import validate_inference_choice
+            from frameseek.engine.inference import validate_inference_choice
             try:
                 validate_inference_choice(settings, values.device)
             except ValueError as error:
@@ -378,6 +378,7 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
                 "model_ready": model_ready, "fingerprint": manifest.get("fingerprint"),
                 "activity": runtime.worker.activity, "worker_error": runtime.worker.error,
                 "auto_update": settings.auto_update, "paused": bool(paused and paused["value"] == "true"),
+                "realtime_monitoring": runtime.worker.watcher.active, "watcher_error": runtime.worker.watcher.error,
                 "csrf": auth.csrf(token), "sources": list(settings.sources),
                 "tasks": {key: value or 0 for key, value in tasks.items()}, "current_task": current_task, "progress":progress,
                 "monitor_directories": [settings.sources[item['source']].resolve().as_posix() + ('/' + item['path'] if item['path'] else '') for item in folders(settings, runtime.db) if item['source'] in settings.sources],

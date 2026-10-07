@@ -127,8 +127,21 @@ frameseek sync
 
 `frameseek backup` 可以备份 SQLite 和 Qdrant 快照，搜索历史和网站配置也会一起保存。
 
+开启自动更新后，程序实时监听监控目录中的 BIF 和图片变动，等待文件稳定后更新索引。普通文件只检查发生变动的路径，目录移动等操作会触发扫描补查；启动、手动检查和定时补查也会扫描目录，补查默认每 24 小时一次，可在设置页调整。关闭自动更新后停止监听，暂停时暂存变动，恢复后继续处理。NAS 使用 Linux 原生文件事件监听，Windows 本地运行也支持；监听启动失败时继续定时扫描，后台任务页显示提示。
+
 所有 Compose 都直接使用 GHCR 镜像：`compose.yml` 默认 2 GiB，`compose.ghcr.yml` 默认 12 GiB。本地 HTTP 测试使用 `compose.yml` 加 `compose.local.yml`（Docker Compose 2.24.4+），首次启动自动生成登录信息。内存模式直接修改 Compose 中的 `mem_limit` 和 `IMGS_MODE`。
 
-源码在 `frameseek/`，前端文件在 `frameseek/static/`，测试在 `tests/`，开发脚本在 `scripts/`。本地验证新镜像可运行 `docker build -t frameseek:ci .`；部署无需本地构建。
+源码按用途放在 `frameseek/` 的子目录中：
+
+| 目录 | 内容 |
+| --- | --- |
+| `core/` | 配置、认证、SQLite 和路径处理 |
+| `media/` | BIF、图片解析与目录范围 |
+| `engine/` | 特征提取、向量检索与后台索引 |
+| `integrations/` | Emby、NAS 连接与文件同步 |
+| `tools/` | 模型初始化、评测、备份与迁移 |
+| `static/` | 网页和样式 |
+
+`cli.py` 和 `web.py` 分别是命令行与网站入口。测试在 `tests/`，开发脚本在 `scripts/`。本地验证新镜像可运行 `docker build -t frameseek:ci .`；部署无需本地构建。
 
 `theme.css` 是 daisyUI 样式构建入口。修改主题或前端使用的样式类后，用 Node.js 20+ 运行 `npm ci` 和 `npm run build:css`。静态文件已包含在镜像中，NAS 直接运行即可。

@@ -90,9 +90,9 @@ def prune_deleted(runtime, manifest: Path, destination: Path) -> dict:
 def main():
     import argparse
     from dotenv import load_dotenv
-    from .console import configure_console
-    from .config import Settings
-    from .search import Runtime
+    from frameseek.core.console import configure_console
+    from frameseek.core.config import Settings
+    from frameseek.engine.search import Runtime
     configure_console()
     load_dotenv('.env')
     parser = argparse.ArgumentParser()

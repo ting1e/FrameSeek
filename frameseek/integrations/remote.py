@@ -34,5 +34,5 @@ def roots(required=False) -> dict[str, str]:
         return {}
     if not isinstance(value, list) or any(not isinstance(root, str) or not PurePosixPath(root).is_absolute() or '..' in PurePosixPath(root).parts for root in value):
         raise ValueError('SSH directories must be an absolute POSIX path list')
-    from .config import directory_sources
+    from frameseek.core.config import directory_sources
     return {key: path.as_posix() for key, path in directory_sources(json.dumps(value)).items()}

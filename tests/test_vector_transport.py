@@ -4,8 +4,8 @@ import threading
 
 import numpy as np
 
-from frameseek.config import Settings
-from frameseek.vectors import VectorStore
+from frameseek.core.config import Settings
+from frameseek.engine.vectors import VectorStore
 
 
 def test_internal_qdrant_requests_bypass_system_proxy(tmp_path, monkeypatch):

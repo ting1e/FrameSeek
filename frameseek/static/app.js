@@ -24,10 +24,10 @@ async function api(path, options = {}) {
 function showLogin() { $("session-loading").hidden = true; historyLoaded = false;  $("login-section").hidden = false; $("search-section").hidden = true; $("header-status").hidden = true; if (polling) clearInterval(polling); polling = null; }
 function showSearch() { $("session-loading").hidden = true; if (!historyLoaded) { historyLoaded = true; loadSettings(true).catch(() => {}); loadEmbySettings().catch(() => {}); refreshHistory().catch(() => { historyLoaded = false; }); }  $("login-section").hidden = true; $("search-section").hidden = false; $("header-status").hidden = false; if (!polling) polling = setInterval(() => refreshStatus().catch(() => {}), 10000); }
 function taskEventLabel(kind) {
-  return ({scan:"目录扫描",bif_modified:"文件变动",indexed:"特征更新完成",scan_error:"扫描异常",index_error:"处理失败",search_error:"搜索异常",history_error:"历史保存异常"})[kind] || "任务记录";
+  return ({scan:"目录扫描",watch_update:"变动检查",watch_error:"监听异常",bif_modified:"文件变动",indexed:"特征更新完成",scan_error:"扫描异常",index_error:"处理失败",search_error:"搜索异常",history_error:"历史保存异常"})[kind] || "任务记录";
 }
 function taskEventMessage(event) {
-  if (event.kind === "scan") {
+  if (event.kind === "scan" || event.kind === "watch_update") {
     try { const counts = JSON.parse(event.message); return `发现 ${counts.observed || 0} 个文件，变动 ${counts.modified || 0} 个，加入处理 ${counts.queued || 0} 个，删除 ${counts.deleted || 0} 个，扫描异常 ${counts.scan_errors || 0} 个。`; } catch (_) {}
   }
   return event.message;
@@ -40,17 +40,17 @@ async function refreshStatus() {
   $("pending-count").textContent = `等待稳定 ${tasks.stabilizing} · 待处理 ${tasks.queued} · 处理中 ${tasks.processing} · 失败待重试 ${tasks.failed}`;
   paused = status.paused; $("pause").textContent = paused ? "恢复更新" : "暂停更新";
   const directories = status.monitor_directories || [];
-  const labels = {idle:tasks.stabilizing ? "等待文件稳定" : (status.manual_active ? "本次更新仍在进行" : "等待下一次检查"),paused:"更新已暂停",disabled:"手动更新模式",scanning:"正在扫描监控目录",cleanup:"正在清理旧版本向量",error:"更新遇到错误"};
+  const labels = {idle:tasks.stabilizing ? "等待文件稳定" : (status.manual_active ? "本次更新仍在进行" : (status.realtime_monitoring ? "正在监听文件变动" : "等待下一次检查")),paused:"更新已暂停",disabled:"手动更新模式",scanning:"正在扫描监控目录",checking_changes:"正在检查变动文件",cleanup:"正在清理旧版本向量",error:"更新遇到错误"};
   $("task-label").textContent = paused ? (status.activity === "paused" ? "更新已暂停" : "正在等待当前分块结束后暂停") : (!directories.length ? "未设置监控目录" : (status.scan_requested ? "检查请求等待执行" : (status.activity.startsWith("indexing:") ? "正在提取画面特征" : (labels[status.activity] || "正在读取任务状态"))));
   $("task-updated").textContent = `状态更新于 ${new Date().toLocaleTimeString("zh-CN", {hour:"2-digit",minute:"2-digit",second:"2-digit"})}`;
-  $("task-hint").textContent = paused ? "暂停后保留处理进度。点击“恢复更新”继续；已完成的画面仍可搜索。" : (!directories.length ? "到设置页填写监控目录后，再检查文件变动。" : (status.manual_active && !status.auto_update ? "正在执行一次手动更新；全部任务完成后回到手动模式。编码失败会按退避时间重试；扫描异常需修复后再次检查。" : (!status.auto_update ? "点击“检查文件变动”执行一次扫描和更新。只处理新增或修改的 BIF 和图片，文件稳定后再提取特征。" : "系统会定期扫描监控目录。新增或修改的 BIF 和图片完成特征提取后发布，已删除文件会清理索引。")));
+  $("task-hint").textContent = paused ? "暂停后保留处理进度。点击“恢复更新”继续；已完成的画面仍可搜索。" : (!directories.length ? "到设置页填写监控目录后，再检查文件变动。" : (status.manual_active && !status.auto_update ? "正在执行一次手动更新；全部任务完成后回到手动模式。编码失败会按退避时间重试；扫描异常需修复后再次检查。" : (!status.auto_update ? "点击“检查文件变动”执行一次扫描和更新。只处理新增或修改的 BIF 和图片，文件稳定后再提取特征。" : "系统实时监听文件变动，并定期扫描补查。文件稳定后更新特征，已删除文件会清理索引。")));
   renderTaskProgress(status.progress);
   const current = status.current_task;
   $("task-progress").hidden = !current;
   if (current) $("task-progress").textContent = `${current.root_directory || directoryRoot(current.source)}/${current.relpath}\n已保存 ${current.cursor.toLocaleString()} / ${current.total.toLocaleString()} 帧。完整文件处理完后才可搜索。`;
   $("scan").disabled = taskActionBusy || paused || !directories.length || status.scan_requested || status.activity === "scanning";
   $("pause").disabled = taskActionBusy;
-  $("task-error").textContent = !status.model_ready ? "模型尚未准备好，请先完成模型下载。" : (status.worker_error || (tasks.failed ? `${tasks.failed} 个任务失败待重试，可查看下方记录定位原因。` : ""));
+  $("task-error").textContent = !status.model_ready ? "模型尚未准备好，请先完成模型下载。" : (status.worker_error || (status.watcher_error ? "实时监听未启动，当前使用定时扫描。" : "") || (tasks.failed ? `${tasks.failed} 个任务失败待重试，可查看下方记录定位原因。` : ""));
   $("events").replaceChildren(...status.events.map(event => {
     const item = node("li", "");
     item.title = `${new Date(event.time * 1000).toLocaleString()} · ${taskEventLabel(event.kind)} · ${taskEventMessage(event)}`;
@@ -393,7 +393,7 @@ async function loadSettings(initial = false) {
   }));
   for (const [name,id] of Object.entries(settingsControls)) {
     const input = $(id); if (input.type === "checkbox") input.checked = data.saved[name];
-    else input.value = name === "scan_interval_seconds" ? data.saved[name] / 60 : data.saved[name];
+    else input.value = name === "scan_interval_seconds" ? data.saved[name] / 3600 : data.saved[name];
   }
   savedSettings = data.saved;
   const runningDevice = inferenceOptions.find(option => option.value === data.running.device)?.label || data.running.device;
@@ -439,7 +439,7 @@ const settingsAutoSave = createAutoSave("settings-form", "settings-message", asy
   const values = {...savedSettings};
   for (const [name,id] of Object.entries(settingsControls)) { const input = $(id); values[name] = input.type === "checkbox" ? input.checked : (["device","precision"].includes(name) ? input.value : Number(input.value)); }
   values.monitor_directories = parseMonitorDirectories($("monitor-directories").value);
-  values.scan_interval_seconds *= 60;
+  values.scan_interval_seconds = Math.round(values.scan_interval_seconds * 3600);
   const result = await api("/api/settings", {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(values)});
   monitorSources = result.source_directories;
   savedSettings = values;

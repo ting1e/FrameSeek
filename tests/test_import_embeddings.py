@@ -8,8 +8,8 @@ from PIL import Image
 
 from conftest import build, write_bif
 from frameseek import bif
-from frameseek.import_embeddings import import_export, import_file
-from frameseek.model import digest
+from frameseek.engine.import_embeddings import import_export, import_file
+from frameseek.engine.model import digest
 
 
 def export_file(runtime, tmp_path, source='sda', relative='foreign/same.bif'):

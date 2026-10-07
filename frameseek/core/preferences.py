@@ -37,7 +37,7 @@ class Preferences(BaseModel):
     batch: int = Field(1, ge=1, le=32)
     chunk_frames: int = Field(64, ge=1, le=1024)
     auto_update: bool = False
-    scan_interval_seconds: int = Field(600, ge=60, le=86400)
+    scan_interval_seconds: int = Field(86400, ge=60, le=86400)
     stable_seconds: int = Field(60, ge=0, le=3600)
     default_top: Literal[20, 50, 100, 200, 500] = 20
     collapse_results: bool = True

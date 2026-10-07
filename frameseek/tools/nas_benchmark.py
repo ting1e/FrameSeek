@@ -8,8 +8,8 @@ import time
 import uuid
 from pathlib import Path
 
-from .console import configure_console
-from .sync import connect, NAS_ROOTS
+from frameseek.core.console import configure_console
+from frameseek.integrations.sync import connect, NAS_ROOTS
 
 
 def command(client, text: str, output: Path | None = None):
@@ -67,7 +67,7 @@ def main():
                '-e IMGS_TORCH_THREADS=4 -e IMGS_SOURCES='+shlex.quote(environment)+' '
                '-v '+shlex.quote(directory+'/model:/models/dinov3:ro')+' '
                '-v '+shlex.quote(directory+'/scratch:/scratch')+' '+mounts+' '+tag+
-               ' python -m frameseek.benchmark --device cpu --batch 1 --frames '+str(args.frames)+
+               ' python -m frameseek.tools.benchmark --device cpu --batch 1 --frames '+str(args.frames)+
                ' --repeat '+str(args.repeat)+' --output /scratch/result.json')
         command(client,run,reports/'nas-benchmark-run.log')
         with client.open_sftp() as sftp:
