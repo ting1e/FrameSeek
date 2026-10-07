@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="autumn">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FrameSeek</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=20261007-generated">
+  <link rel="apple-touch-icon" href="/static/app-icon.png?v=20261007">
+  <link rel="stylesheet" href="/static/daisyui.css?v=20261007-theme-cleanup"><link rel="stylesheet" href="/static/style.css?v=20261007-result-frame-row">
+  <script src="/static/app.js?v=20261007-result-frame-row" defer></script>
+</head>
+<body class="bg-base-200 text-base-content">
+  <header class="navbar page-header"><a class="brand" href="/" aria-label="FrameSeek 首页">FrameSeek</a><div id="header-status" class="header-status" hidden><nav class="tabs tabs-border flex-1 header-navigation" aria-label="主导航"><button id="search-tab" class="text-base tab tab-active font-medium" aria-current="page">截图搜索</button><button id="history-tab" class="text-base tab">搜索历史</button><button id="background-tasks" class="text-base tab">后台任务</button><button id="settings-tab" class="text-base tab">设置</button></nav><button id="logout" class="btn btn-ghost btn-sm">退出登录</button></div></header>
+  <main class="page-main">
+    <section id="session-loading" class="card bg-base-100 session-loading" role="status" aria-live="polite" aria-busy="true"><div class="card-body"><span id="session-spinner" class="loading loading-spinner loading-sm" aria-hidden="true"></span><p id="session-message">正在加载图库…</p><button id="session-retry" class="btn btn-outline btn-sm" hidden>重新连接</button></div></section>
+    <noscript><p class="alert alert-error">浏览器需要启用 JavaScript 才能登录及搜索。</p></noscript>
+    <section id="login-section" class="login-panel" hidden>
+      <div class="login-intro"><span class="badge badge-primary badge-outline">你的本地视觉图库</span><h1>一张截图，<br>找到它的出处。</h1><p class="lead">在视频缩略图库中寻找画面，<br>定位来源文件和时间。</p><div class="feature-tags"><span class="badge badge-ghost">拖拽上传</span><span class="badge badge-ghost">粘贴搜索</span><span class="badge badge-ghost">定位时间</span></div></div>
+      <form id="login-form" class="card bg-base-100 shadow-sm login-form"><div class="card-body"><h2 class="card-title">登录你的图库</h2><p class="text-base-content/60 text-sm">输入账号，开始寻找画面。</p><label class="fieldset">用户名<input id="username" class="input w-full" autocomplete="username" value="mortal" required></label><label class="fieldset">密码<input id="password" class="input w-full" type="password" autocomplete="current-password" required></label><button type="submit" class="btn btn-primary w-full">登录</button><p id="login-error" class="error" role="alert" aria-live="polite"></p></div></form>
+    </section>
+    <section id="search-section" hidden>
+      <div id="search-workspace">
+      <div class="card bg-base-100 shadow-sm search-panel"><div class="card-body search-layout">
+        <div class="search-image-column"><div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="选择或拖入截图"><input id="file-input" type="file" accept="image/jpeg,image/png,image/webp" hidden><div id="upload-hint"><div class="upload-icon">＋</div><strong>把截图拖到这里</strong><span>点击选择图片，或按 Ctrl + V 粘贴</span><small>JPG / PNG / WebP · 最大 10MB</small></div><img id="query-preview" alt="待搜索截图" hidden></div><div id="image-tools" class="image-tools" hidden><div><strong id="image-name"></strong><span id="image-size"></span></div><div class="join"><button id="view-query" class="btn btn-ghost btn-sm join-item">放大查看</button><button id="replace-query" class="btn btn-ghost btn-sm join-item">替换图片</button><button id="clear-query" class="btn btn-ghost btn-sm join-item">移除</button></div></div></div>
+        <div class="search-controls">
+          <div class="search-options-heading"><h2>搜索选项</h2><p>选择搜索类型、范围和结果数量。</p></div>
+          <div class="control-options">
+            <input id="search-source" type="hidden" value="">
+            <div class="search-option"><label for="search-media-type">搜索类型</label><select id="search-media-type" class="select select-sm"><option value="all">全部</option><option value="bif">仅 BIF 视频画面</option><option value="image">仅图片</option></select></div>
+            <div class="directory-search"><label for="directory-keyword">查找目录</label><input id="directory-keyword" class="input input-sm" type="search" placeholder="输入目录关键词，可直接搜索" autocomplete="off" maxlength="256"><div id="directory-options" class="directory-options" hidden></div><div class="directory-selection"><span id="directory-selected">全部目录</span><button id="clear-search-scope" class="btn btn-ghost btn-xs" type="button">清除范围</button></div><p id="directory-message" role="status" aria-live="polite"></p></div>
+            <div class="search-option"><label for="top">结果数量</label><select id="top" class="select select-sm"><option value="20">20 条</option><option value="50">50 条</option><option value="100">100 条</option><option value="200">200 条</option><option value="500">500 条</option></select></div>
+            <div class="search-option"><label for="hit-sort">同一视频命中排序</label><select id="hit-sort" class="select select-sm hit-sort-select"><option value="similarity" selected>相似度优先</option><option value="time">时间顺序</option></select></div>
+            <label class="fold-label"><input id="collapse" class="checkbox checkbox-primary checkbox-sm" type="checkbox" checked>合并同一 BIF</label>
+          </div>
+          <button id="search-button" class="btn btn-primary" disabled>开始搜索</button>
+        </div>
+      </div></div>
+      <p id="message" class="message" role="status" aria-live="polite"></p>
+      <div class="results-heading"><h2><span id="results-title">搜索结果</span> <span id="result-count" class="badge badge-ghost"></span></h2><span class="searchable-count">可搜索画面 <strong id="frame-count">0</strong></span><span id="timing" class="badge badge-outline"></span></div>
+      <div id="results" class="results-grid"></div><div id="empty-state" class="empty-state"><span>⌕</span><h2 id="empty-title">搜索结果会显示在这里</h2><p id="empty-description">先选择一张图片，再点击“开始搜索”。</p></div>
+      </div><section id="history-workspace" hidden><div class="history-heading workspace-toolbar"><button id="refresh-history" class="btn btn-outline btn-sm">刷新记录</button></div><p id="history-message" role="status" class="message"></p><div id="history-list" class="history-grid"></div><div class="history-pagination"><button id="history-prev" class="btn btn-outline btn-sm" disabled>上一页</button><span id="history-page" class="text-sm"></span><button id="history-next" class="btn btn-outline btn-sm" disabled>下一页</button></div><div id="history-empty" class="empty-state" hidden><span>◷</span><p>还没有搜索记录。完成第一次搜索后，会自动保存在这里。</p></div></section>
+
+      <section id="tasks-workspace" hidden>
+        <div class="history-heading workspace-toolbar"><div class="task-actions"><button id="refresh-tasks" class="btn btn-ghost btn-sm">刷新状态</button><span id="task-updated" class="updated-label">正在读取状态</span></div></div>
+        <div class="task-overview"><div class="card bg-base-100 task-status-card"><div class="card-body"><h2>当前状态</h2><p id="task-label" class="task-state">正在读取状态…</p><p id="pending-count" class="task-count"></p><p id="task-progress" class="task-count" hidden></p><div id="processing-metrics" class="processing-metrics" hidden><div><span>已处理帧数</span><strong id="processed-frames">0</strong></div><div><span>待处理帧数</span><strong id="remaining-frames">0</strong></div><div><span>处理速度</span><strong id="processing-speed">—</strong></div><div><span>预计剩余时间</span><strong id="processing-eta">等待速度稳定</strong></div></div><p class="processing-note">按当前监控范围的已保存进度统计，含跳过的坏帧。速度按最近两分钟的进度估算；稳定后预测已知任务的剩余时间，不含后续新文件和数据库整理。</p><p id="task-hint" class="task-hint"></p><div class="task-actions"><button id="scan" class="btn btn-primary btn-sm">检查文件变动</button><button id="pause" class="btn btn-outline btn-sm">暂停更新</button><button id="task-config" class="btn btn-ghost btn-sm">设置监控与更新</button></div><p id="task-notice" class="task-notice" role="status" aria-live="polite"></p><div id="task-error" class="error"></div></div></div><div class="card bg-base-100 task-index-card"><div class="card-body"><span class="task-stat-label">可搜索画面</span><strong id="task-frames" class="task-stat-value">0</strong><p class="lead">这些画面已准备好，可以开始搜索。</p></div></div></div>
+        <div class="card bg-base-100 task-events-card"><div class="card-body"><div class="task-events-heading"><h2>最近的处理记录</h2><span class="badge badge-ghost">每 10 秒刷新</span></div><ul id="events" class="events"></ul></div></div>
+      </section>
+
+      <section id="settings-workspace" hidden>
+        <div class="history-heading workspace-toolbar"><button id="reload-settings" class="btn btn-outline btn-sm">重新读取</button></div>
+        <form id="settings-form" class="settings-form"><div class="card bg-base-100 settings-card"><div class="card-body"><h2>监控文件夹</h2><p class="settings-help">完整目录，每行一个，监控其中及子目录的 BIF 和图片；留空停止监控。</p><label class="fieldset">目录列表<textarea id="monitor-directories" class="textarea monitor-paths" rows="5" placeholder="/mnt/videos&#10;/mnt/archive"></textarea></label><p class="settings-help">Docker 填写容器内目录，新增目录需先在 Compose 中挂载；本地运行填写本机目录。</p><p class="settings-help">下一轮扫描生效。取消监控保留已有画面和历史；删除文件会移除对应画面。</p></div></div>
+          <div class="card bg-base-100 settings-card"><div class="card-body"><h2>后台处理</h2><p class="settings-help">逐个处理，搜索优先。线程数、处理批次和保存进度修改后需重启应用。</p><div class="settings-fields">
+            <label>CPU 推理线程数<input id="config-cpu-threads" class="input" type="number" min="1" max="16" required><small>建议从 4 个线程开始。</small></label>
+
+            <label>图片解码线程数<input id="config-decode-workers" class="input" type="number" min="1" max="16" required><small>NAS 建议 1 个线程。</small></label>
+            <label>每批处理帧数<input id="config-batch" class="input" type="number" min="1" max="32" required><small>NAS CPU 建议 1 帧。</small></label>
+            <label>每次保存进度的帧数<input id="config-chunk" class="input" type="number" min="1" max="1024" required><small>CPU 建议 64 帧；越小越快响应暂停。</small></label>
+            <label>检查文件变动的间隔（分钟）<input id="config-interval" class="input" type="number" min="1" max="1440" step="1" required><small>开启自动更新后生效。</small></label>
+            <label>文件稳定等待时间（秒）<input id="config-stable" class="input" type="number" min="0" max="3600" required><small>文件停止变化后再处理，建议 60 秒。</small></label>
+          </div><label class="settings-toggle"><input id="config-auto-update" class="toggle toggle-primary" type="checkbox"><span>自动检查并处理新增或修改的 BIF 和图片</span></label></div></div>
+          <div class="card bg-base-100 settings-card"><div class="card-body"><h2>搜索默认值</h2><div class="settings-fields"><label>每次返回结果数<select id="config-top" class="select"><option value="20">20 条</option><option value="50">50 条</option><option value="100">100 条</option><option value="200">200 条</option><option value="500">500 条</option></select></label></div><label class="settings-toggle"><input id="config-collapse" class="toggle toggle-primary" type="checkbox"><span>默认合并同一 BIF 的所有命中</span></label></div></div>
+          <div class="settings-save"><p id="settings-message" role="status" aria-live="polite"></p></div>
+        </form>
+        <form id="emby-form" class="card bg-base-100 settings-card"><div class="card-body"><h2>Emby 播放</h2><p class="settings-help">点击命中画面，从对应时间播放视频。</p><div class="settings-fields"><label>Emby 服务地址<input id="emby-url" class="input" type="url" placeholder="https://你的 Emby 地址"><small>填写服务根地址，NAS 和浏览器都需能访问。</small></label><label>API Key<input id="emby-key" class="input" type="password" autocomplete="new-password" placeholder="首次填写；留空保留已保存的 Key"><small>在 Emby 后台创建；留空保留已保存的 Key。</small></label><label>播放方式<select id="emby-mode" class="select"><option value="standalone">独立播放窗口</option><option value="emby_web">Emby 网页端播放</option></select></label><label>播放用户<select id="emby-user" class="select"><option value="">先读取用户</option></select></label><label id="emby-policy-field" hidden>网页端选择策略<select id="emby-policy" class="select"><option value="new_tab">每次新开 Emby 网页端</option><option value="recent">优先最近活跃网页端，没有则新开</option></select></label><label id="emby-device-field" hidden>网页设备范围（可选）<select id="emby-device" class="select"><option value="">不限网页设备</option></select><small>留空自动选择，也可指定浏览器设备。</small></label></div><p id="emby-web-help" class="settings-help" hidden>仅控制所选用户的网页端。同一浏览器的标签可能共享会话，无法保证独立控制新标签。</p><label class="settings-toggle"><input id="emby-enabled" class="toggle toggle-primary" type="checkbox"><span>点击搜索结果播放</span></label><div class="task-actions"><button id="emby-connect" class="btn btn-outline btn-sm" type="button">读取用户与网页设备</button><button id="emby-refresh" class="btn btn-ghost btn-sm" type="button">刷新视频映射</button></div><p class="settings-help">填写地址和 Key → 读取用户 → 选择用户和播放方式 → 启用。修改自动保存；找不到视频时可刷新映射。</p><p id="emby-message" role="status" aria-live="polite"></p></div></form>
+      </section>
+    </section>
+  </main>
+  <button id="back-to-top" class="btn btn-primary back-to-top" type="button" aria-label="返回页面顶部" title="返回顶部" hidden>↑</button>
+  <footer class="page-footer">FrameSeek · 本地图片搜索 <span>搜索记录保存在本地，只有你主动删除才会移除</span></footer>
+  <dialog id="delete-dialog" class="modal" aria-labelledby="delete-title" aria-describedby="delete-description">
+    <div class="modal-box delete-modal">
+      <h2 id="delete-title">删除这条搜索记录？</h2>
+      <p id="delete-record" class="delete-record"></p>
+      <p id="delete-description">这条记录的搜索结果和截图缩略图将一并删除，删除后无法恢复。视频文件和搜索索引不受影响。</p>
+      <p id="delete-error" class="error" role="alert"></p>
+      <div class="modal-action"><button id="delete-cancel" class="btn btn-ghost" autofocus>保留记录</button><button id="delete-confirm" class="btn btn-error">删除记录</button></div>
+    </div>
+  </dialog>
+  <dialog id="query-dialog" class="modal"><div class="modal-box query-modal"><div class="dialog-heading"><div><h2>搜索截图</h2><p id="query-dialog-info"></p></div><button id="query-dialog-close" class="btn btn-ghost btn-sm">关闭 ✕</button></div><img id="query-dialog-image" alt="搜索截图完整预览"></div></dialog>
+  <dialog id="frame-dialog" class="modal"><div class="modal-box frame-modal"><div class="dialog-heading"><div><h2 id="dialog-title">附近画面</h2><p id="dialog-path"></p></div><button id="dialog-close" class="btn btn-ghost btn-sm">关闭 ✕</button></div><div id="neighbor-frames" class="neighbors"></div><div id="dialog-error" class="error"></div></div></dialog>
+</body></html>

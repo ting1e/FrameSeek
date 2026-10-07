@@ -1,0 +1,55 @@
+# 本地配置与凭据
+.env
+.env.*
+compose.nas.yml
+compose.settings.yml
+compose.override.yml
+docker-compose.override.yml
+credentials*.txt
+/sync.local.json
+/docs/local/
+*.key
+*.pem
+/.agents/
+/.codex/
+/.aws/
+/.ssh/
+
+# 媒体、模型、索引与运行记录
+data/
+bif/
+models/
+reports/
+*.log
+*.bif
+*.npz
+*.safetensors
+*.pt
+*.pth
+*.bin
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.snapshot
+*.partial
+*.tar
+*.tar.gz
+*.zip
+
+# 开发依赖、缓存与构建产物
+.venv/
+node_modules/
+.npm-cache/
+/.cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+dist/
+.coverage
+htmlcov/
+
+# 本地运维脚本
+/scripts/*
+!/scripts/build-local.ps1
+!/scripts/tune_gpu.py

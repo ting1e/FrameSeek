@@ -1,0 +1,6 @@
+@import "tailwindcss" source(none);
+@source "./imgsearch/static/*.html";
+@source "./imgsearch/static/*.js";
+@plugin "daisyui" {
+  themes: autumn --default;
+}

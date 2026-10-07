@@ -1,0 +1,43 @@
+name: frameseek
+# 本地构建：先运行 imgsearch init，再配合 compose.local.yml 启动测试。
+# NAS 拉取镜像使用 compose.ghcr.yml；后台参数在网站设置。
+# 内存模式：low_memory/cold + 2g，或 high_memory/cached + 12g。
+# 切换时暂停后台更新，同时修改 Qdrant mem_limit 和应用 IMGS_MODE，再重建容器。
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.19.2
+    restart: unless-stopped
+    mem_limit: 2g # 改用 high_memory 时设为 12g。
+    environment:
+      QDRANT__SERVICE__API_KEY: ${IMGS_QDRANT_KEY:?Run imgsearch init first}
+      QDRANT__STORAGE__HNSW_INDEX__MAX_INDEXING_THREADS: 1
+      QDRANT__STORAGE__OPTIMIZERS__MAX_OPTIMIZATION_THREADS: 1
+      QDRANT__STORAGE__OPTIMIZERS__MAX_SEGMENT_SIZE_KB: 131072
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    networks: [backend]
+  app:
+    build: .
+    image: frameseek:0.1.0
+    restart: unless-stopped
+    mem_limit: 4g # 应用独立上限，不与 Qdrant 共用。
+    environment:
+      IMGS_USERNAME: admin
+      IMGS_PASSWORD_HASH: ${IMGS_PASSWORD_HASH:?Run imgsearch init first}
+      IMGS_SESSION_SECRET: ${IMGS_SESSION_SECRET:?Run imgsearch init first}
+      IMGS_QDRANT_KEY: ${IMGS_QDRANT_KEY:?Run imgsearch init first}
+      IMGS_MODE: low_memory # 数据库读取/缓存策略，须与选用的内存配置匹配。
+      IMGS_DATA: /data
+      IMGS_MODEL: /models/dinov3
+      IMGS_QDRANT_URL: http://qdrant:6333
+      IMGS_PROXY_IPS: '*' # 接受宿主机反向代理的转发头。
+    ports:
+      - 127.0.0.1:18443:8000
+    volumes:
+      - ./data:/data
+      - ./models/dinov3-vitl16:/models/dinov3:ro
+      - ./bif:/media:ro # 挂载媒体根目录，列表内可配置任意已挂载子目录。
+    depends_on: [qdrant]
+    networks: [backend]
+networks:
+  backend:

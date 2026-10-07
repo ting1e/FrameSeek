@@ -1,0 +1,12 @@
+{
+  "name": "frameseek-ui",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i theme.css -o imgsearch/static/daisyui.css --minify"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.1.18",
+    "tailwindcss": "4.1.18",
+    "daisyui": "5.5.14"
+  }
+}

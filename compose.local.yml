@@ -1,0 +1,14 @@
+services:
+  qdrant:
+    volumes:
+      - qdrant_local:/qdrant/storage
+    ports:
+      - 127.0.0.1:16333:6333
+
+  app:
+    environment:
+      IMGS_SECURE_COOKIE: 'false'
+      IMGS_ESCAPED_PATHS: 'true'
+
+volumes:
+  qdrant_local:

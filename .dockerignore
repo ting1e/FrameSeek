@@ -1,0 +1,27 @@
+# 只允许镜像构建需要的文件进入上下文；本机资料和部署配置默认全部排除。
+**
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!imgsearch/
+!imgsearch/**
+
+# 即使被放进源码目录，也不允许缓存、凭据、权重、数据库或媒体进入镜像。
+**/__pycache__/**
+**/*.pyc
+**/*.pyo
+**/.git/**
+**/.env*
+**/credentials*.txt
+**/sync.local.json
+**/*.pem
+**/*.key
+**/*.bif
+**/*.npz
+**/*.safetensors
+**/*.pt
+**/*.pth
+**/*.bin
+**/*.sqlite*
+**/*.snapshot
+**/*.log

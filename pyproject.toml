@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "frameseek"
+version = "0.1.0"
+description = "FrameSeek: local visual search over BIF video thumbnails and images"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi==0.142.2", "uvicorn==0.54.0", "python-multipart==0.0.32",
+  "qdrant-client==1.19.1", "numpy>=1.26,<2.3", "Pillow>=10.4,<13",
+  "transformers==5.18.0", "safetensors==0.8.0", "huggingface-hub==1.33.0",
+  "paramiko==5.0.0", "httpx==0.28.1", "python-dotenv==1.2.4", "portalocker==3.2.0"
+]
+
+[project.optional-dependencies]
+test = ["pytest==9.1.1"]
+ml = ["torch==2.7.1", "torchvision==0.22.1"]
+
+[project.scripts]
+imgsearch = "imgsearch.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["imgsearch*"]
+
+[tool.setuptools.package-data]
+imgsearch = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

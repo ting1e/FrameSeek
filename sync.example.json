@@ -1,0 +1,9 @@
+{
+  "host": "nas.example.com",
+  "port": 22,
+  "user": "your-user",
+  "directories": [
+    "/mnt/videos",
+    "/mnt/archive"
+  ]
+}
