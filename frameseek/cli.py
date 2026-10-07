@@ -175,7 +175,7 @@ def main():
                 import httpx
                 store = runtime.get_store()
                 url = settings.qdrant_url.rstrip("/") + f"/collections/{store.collection}/snapshots/{latest.name}"
-                with httpx.stream("GET", url, headers={"api-key": settings.qdrant_key or ""}, timeout=3600) as response:
+                with httpx.stream("GET", url, headers={"api-key": settings.qdrant_key or ""}, timeout=3600, trust_env=False) as response:
                     response.raise_for_status()
                     with (folder / "qdrant.snapshot").open("wb") as out:
                         for block in response.iter_bytes(1024 * 1024):

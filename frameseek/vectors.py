@@ -12,7 +12,8 @@ class VectorStore:
         self.collection = "bif_" + fingerprint[:20]
         self.client = (QdrantClient(":memory:") if settings.qdrant_url == ":memory:" else
                        QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_key, timeout=120,
-                                    grpc_port=grpc_port or 6334, prefer_grpc=grpc_port is not None))
+                                    grpc_port=grpc_port or 6334, prefer_grpc=grpc_port is not None,
+                                    trust_env=False))
 
     def ensure(self, apply_mode: bool = True):
         memory = models.Memory.COLD if self.settings.mode == "low_memory" else models.Memory.CACHED
@@ -85,7 +86,7 @@ class VectorStore:
         response = httpx.post(self.settings.qdrant_url.rstrip('/')+
                               f'/collections/{self.collection}/snapshots',
                               params={'wait':'true'}, headers={'api-key':self.settings.qdrant_key or ''},
-                              timeout=3600)
+                              timeout=3600, trust_env=False)
         response.raise_for_status()
         return models.SnapshotDescription.model_validate(response.json()['result'])
 

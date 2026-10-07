@@ -1,7 +1,8 @@
 FROM python:3.11-slim@sha256:a2bc8c35469b6fe37735f7c4dae39049470b2ce068e73f799c02452de31d24c6
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends intel-opencl-icd ocl-icd-libopencl1 && rm -rf /var/lib/apt/lists/*
+COPY scripts/install-intel-runtime.py /tmp/install-intel-runtime.py
+RUN python /tmp/install-intel-runtime.py && rm /tmp/install-intel-runtime.py && rm -rf /var/lib/apt/lists/*
 RUN useradd --uid 10001 --create-home app && mkdir -p /data && chown app:app /data
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --index-url https://download.pytorch.org/whl/cpu torch==2.7.1 torchvision==0.22.1

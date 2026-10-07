@@ -53,3 +53,4 @@ htmlcov/
 /scripts/*
 !/scripts/build-local.ps1
 !/scripts/tune_gpu.py
+!/scripts/install-intel-runtime.py

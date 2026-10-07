@@ -49,7 +49,7 @@ def build(settings: Settings, destination: Path, allow_pending: bool = False) ->
             store = runtime.get_store()
             snapshot = store.create_snapshot()
             url = settings.qdrant_url.rstrip('/')+f'/collections/{store.collection}/snapshots/{snapshot.name}'
-            with httpx.stream('GET',url,headers={'api-key':settings.qdrant_key or ''},timeout=3600) as response:
+            with httpx.stream('GET',url,headers={'api-key':settings.qdrant_key or ''},timeout=3600,trust_env=False) as response:
                 response.raise_for_status()
                 with (destination/'qdrant.snapshot').open('wb') as out:
                     for block in response.iter_bytes(1024*1024):
@@ -98,7 +98,7 @@ def restore(settings: Settings, folder: Path):
             response = httpx.post(settings.qdrant_url.rstrip('/')+f'/collections/{store.collection}/snapshots/upload',
                                   headers={'api-key':settings.qdrant_key or ''},
                                   params={'priority':'snapshot','wait':'true'},
-                                  files={'snapshot':('qdrant.snapshot',snapshot,'application/octet-stream')},timeout=3600)
+                                  files={'snapshot':('qdrant.snapshot',snapshot,'application/octet-stream')},timeout=3600,trust_env=False)
             response.raise_for_status()
         if store.count() != manifest['stats']['frames'] and not manifest['preflight_only']:
             raise RuntimeError('Restored vector count differs from published frame count')

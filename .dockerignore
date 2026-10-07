@@ -3,6 +3,8 @@
 !Dockerfile
 !.dockerignore
 !pyproject.toml
+!scripts/
+!scripts/install-intel-runtime.py
 !frameseek/
 !frameseek/**
 
