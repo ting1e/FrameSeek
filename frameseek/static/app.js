@@ -486,10 +486,12 @@ async function playInEmby(id, button) {
       if (!popup || popup.closed) throw new Error("未能打开 Emby 网页端，请允许弹出窗口后重试。");
       popup.location.href = url; opened = true;
     };
+    if (plan.local) { openWeb(plan.player_url); message("Emby 未匹配到视频，已改为直接播放同目录 MP4。"); return; }
     if (plan.open_web) openWeb(plan.web_url);
     while (request === embyWebRequest && Date.now() < deadline) {
       const result = await api(`/api/emby/web-play/${encodeURIComponent(id)}`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket:plan.ticket}),timeoutMs:Math.max(1000,deadline-Date.now())});
       if (request !== embyWebRequest) return;
+      if (result.local) { openWeb(result.player_url); message("已改为直接播放同目录 MP4。"); return; }
       if (result.open_web && !opened) openWeb(result.web_url);
       if (!result.waiting) {
         if (!opened && popup && !popup.closed) popup.close();

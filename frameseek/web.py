@@ -24,7 +24,8 @@ from frameseek.engine.search import Runtime
 from frameseek.core.preferences import Preferences, WebPreferences, current, requested, compose_override, DOCKER_FIELDS
 from frameseek.media.directories import REGISTRY_KEY, plan_directories, monitor_directories
 from frameseek.engine.monitoring import folders, sql_scope
-from frameseek.integrations.emby import Emby, EmbySettings, EmbyError
+from frameseek.integrations.emby import Emby, EmbySettings, EmbyError, EmbyNotFound
+from frameseek.media.playback import local_mp4
 from frameseek.media.images import validate_media_type, IMAGE_FORMATS
 from frameseek.media.decode import decode_frame
 
@@ -148,9 +149,40 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
         return emby.public()
 
     @app.get('/emby/player/{frame_id}')
+    @app.get('/player/local/{frame_id}')
     def emby_player(request: Request, frame_id: str):
         auth.require(request)
         return FileResponse(static / 'player.html')
+
+    def local_video_path(row):
+        try:
+            return local_mp4(settings, row)
+        except (ValueError, OSError) as error:
+            raise HTTPException(409, str(error) if isinstance(error, ValueError) else '无法读取同目录的 MP4 文件。') from None
+
+    def local_playback(row):
+        path = local_video_path(row)
+        return {'local':True, 'player_url':'/player/local/'+row['id'],
+                'stream_url':'/api/local/stream/'+row['id'], 'stop_url':'',
+                'time_ms':row['time_ms'], 'seek_seconds':row['time_ms']/1000,
+                'offset_seconds':0, 'transcoding':False, 'name':path.name}
+
+    def playable_frame(frame_id):
+        row = runtime.db.published_frame(frame_id)
+        if not row or not runtime.available(row):
+            raise HTTPException(410, '命中帧的 BIF 已修改或删除，请重新搜索。')
+        return row
+
+    @app.post('/api/local/open/{frame_id}')
+    def local_open(request: Request, frame_id: str):
+        auth.require(request, mutation=True)
+        return local_playback(playable_frame(frame_id))
+
+    @app.get('/api/local/stream/{frame_id}')
+    def local_stream(request: Request, frame_id: str):
+        auth.require(request)
+        row = playable_frame(frame_id)
+        return FileResponse(local_video_path(row), media_type='video/mp4')
 
     @app.post('/api/emby/open/{frame_id}')
     def emby_open(request: Request, frame_id: str):
@@ -160,6 +192,8 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
             raise HTTPException(410, '命中帧的 BIF 已修改或删除，请重新搜索。')
         try:
             return emby.prepare(row)
+        except EmbyNotFound:
+            return local_playback(row)
         except EmbyError as error:
             raise HTTPException(409, str(error)) from None
 
@@ -231,6 +265,8 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
             raise HTTPException(410, '命中帧的 BIF 已修改或删除，请重新搜索。')
         try:
             return emby.play(row)
+        except EmbyNotFound:
+            return local_playback(row)
         except EmbyError as error:
             raise HTTPException(409, str(error)) from None
 
@@ -241,7 +277,10 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
         if not row or not runtime.available(row):
             raise HTTPException(410, '命中帧的 BIF 已修改或删除，请重新搜索。')
         try:
+            emby.resolve(row)
             return emby.web_begin(row)
+        except EmbyNotFound:
+            return local_playback(row)
         except EmbyError as error:
             raise HTTPException(409, str(error)) from None
 
@@ -253,6 +292,8 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
             raise HTTPException(410, '命中帧的 BIF 已修改或删除，请重新搜索。')
         try:
             return emby.web_poll(row, values.ticket) if values else emby.play(row, web_only=True)
+        except EmbyNotFound:
+            return local_playback(row)
         except EmbyError as error:
             raise HTTPException(409, str(error)) from None
 

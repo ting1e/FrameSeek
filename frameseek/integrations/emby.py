@@ -58,6 +58,10 @@ class EmbyError(Exception):
     pass
 
 
+class EmbyNotFound(EmbyError):
+    """Both path and filename lookup finished without a matching video."""
+
+
 def normalize(path):
     path = path.replace('\\', '/')
     return path.casefold() if re.match(r'^[A-Za-z]:/', path) else path
@@ -329,6 +333,8 @@ class Emby:
             matches = self.db.rows('SELECT * FROM emby_items WHERE stem=?', (video_stem(target),))
         if not matches:
             matches = self.filename_matches(config, bif_filename(row['relpath']))
+        if not matches:
+            raise EmbyNotFound('未找到唯一对应的 Emby 视频，请确认文件名一致、媒体已入库，或在设置页刷新视频映射。')
         if len(matches) != 1:
             raise EmbyError('未找到唯一对应的 Emby 视频，请确认文件名一致、媒体已入库，或在设置页刷新视频映射。')
         item = matches[0]

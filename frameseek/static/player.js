@@ -11,11 +11,12 @@ async function json(url, options = {}) {
 async function start() {
   try {
     const status = await json("/api/status"); csrf = status.csrf;
-    const data = await json(`/api/emby/open/${encodeURIComponent(frameId)}`, {method:"POST",headers:{"X-CSRF-Token":csrf}});
+    const source = location.pathname.startsWith('/player/local/') ? 'local' : 'emby';
+    const data = await json(`/api/${source}/open/${encodeURIComponent(frameId)}`, {method:"POST",headers:{"X-CSRF-Token":csrf}});
     stopUrl = data.stop_url; offset = data.offset_seconds;
     document.getElementById("player-title").textContent = data.name;
-    document.title = data.name + " · Emby 网页播放";
-    notice.textContent = data.transcoding ? "由 Emby 转为浏览器可播放的视频，正在从命中位置加载…" : "正在从命中位置加载视频…";
+    document.title = data.name + (data.local ? " · 视频播放" : " · Emby 网页播放");
+    notice.textContent = data.local ? "已找到同目录 MP4，正在从命中位置加载…" : (data.transcoding ? "由 Emby 转为浏览器可播放的视频，正在从命中位置加载…" : "正在从命中位置加载视频…");
     video.addEventListener("loadedmetadata", async () => {
       if (data.seek_seconds) video.currentTime = data.seek_seconds;
       try { await video.play(); notice.textContent = ""; }
@@ -28,7 +29,7 @@ video.addEventListener("timeupdate", () => {
   const seconds = Math.floor(video.currentTime + offset);
   document.getElementById("player-position").textContent = `视频位置 ${[Math.floor(seconds/3600),Math.floor(seconds/60)%60,seconds%60].map(value => String(value).padStart(2,"0")).join(":")}`;
 });
-video.addEventListener("error", () => { notice.textContent = "视频流无法播放，请核对 Emby 播放权限、转码配置及网络。"; document.getElementById("player-retry").hidden = false; });
+video.addEventListener("error", () => { notice.textContent = "视频无法播放，请检查网络及浏览器是否支持该视频的编码格式。"; document.getElementById("player-retry").hidden = false; });
 function stop() {
   if (stopUrl) { fetch(stopUrl,{method:"POST",headers:{"X-CSRF-Token":csrf},credentials:"same-origin",keepalive:true}).catch(() => {}); stopUrl = ""; }
 }
