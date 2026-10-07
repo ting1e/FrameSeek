@@ -27,6 +27,86 @@ def test_emby_config_secret_and_validation(runtime):
     with pytest.raises(ValueError): EmbySettings(source_paths={'sda':'../escape'})
 
 
+@pytest.mark.parametrize('relative', ['folder/movie-320-10.bif', 'folder/movie.mkv-320-10.bif'])
+def test_filename_fallback_handles_different_directories_and_embedded_extension(runtime, monkeypatch, relative):
+    service = configured(runtime.db)
+    searches = []
+    def request(config, method, route, **kwargs):
+        assert method == 'GET' and route == '/Items'
+        term = kwargs['params'].get('SearchTerm')
+        if term:
+            searches.append(term)
+        return {'Items':[{'Id':'video','Name':'A translated metadata title',
+                         'MediaSources':[{'Id':'version','Path':'/emby/another-folder/movie.mkv'}]}],
+                'TotalRecordCount':1}
+    monkeypatch.setattr(service, 'request', request)
+    _, item = service.resolve({'source':'sda','relpath':relative})
+    assert (item['item_id'], item['media_source_id']) == ('video', 'version')
+    assert searches == ['movie']
+
+
+def test_keyword_fallback_requires_complete_filename_and_not_metadata_title(runtime, monkeypatch):
+    service = configured(runtime.db)
+    searches = []
+    def request(config, method, route, **kwargs):
+        term = kwargs['params'].get('SearchTerm')
+        if term:
+            searches.append(term)
+        items = [] if term != '片名' else [
+            {'Id':'wrong-title','Name':'片名.2024','Path':'/remote/another-movie.mkv'},
+            {'Id':'extra','Path':'/remote/片名.2024.花絮.mp4'},
+            {'Id':'correct','Path':'/remote/片名.2024.mkv'},
+        ]
+        return {'Items':items, 'TotalRecordCount':len(items)}
+    monkeypatch.setattr(service, 'request', request)
+    _, item = service.resolve({'source':'sda','relpath':'中文目录/片名.2024-320-10.bif'})
+    assert item['item_id'] == 'correct'
+    assert searches == ['片名.2024', '片名']
+
+
+def test_search_enriches_missing_source_id_without_creating_false_ambiguity(runtime, monkeypatch):
+    service = configured(runtime.db)
+    def request(config, method, route, **kwargs):
+        item = {'Id':'video', 'Path':'/other/movie.mkv'}
+        if kwargs['params'].get('SearchTerm'):
+            item['MediaSources'] = [{'Id':'source', 'Path':'/other/movie.mkv'}]
+        return {'Items':[item], 'TotalRecordCount':1}
+    monkeypatch.setattr(service, 'request', request)
+    _, item = service.resolve({'source':'sda', 'relpath':'movie-320-10.bif'})
+    assert item['item_id'] == 'video' and item['media_source_id'] == 'source'
+
+
+def test_search_fallback_checks_all_pages_and_rejects_duplicate_names(runtime, monkeypatch):
+    service = configured(runtime.db)
+    starts = []
+    def request(config, method, route, **kwargs):
+        assert method == 'GET', 'Ambiguous filenames must never trigger playback'
+        params = kwargs['params']
+        if not params.get('SearchTerm'):
+            return {'Items':[], 'TotalRecordCount':0}
+        starts.append(params['StartIndex'])
+        if params['StartIndex'] == 0:
+            items = [{'Id':str(i), 'Path':f'/remote/other-{i}.mkv'} for i in range(199)]
+            items.append({'Id':'a', 'Path':'/remote/a/movie.mkv'})
+        else:
+            items = [{'Id':'b','Path':'/remote/b/movie.mp4'}]
+        return {'Items':items, 'TotalRecordCount':201}
+    monkeypatch.setattr(service, 'request', request)
+    with pytest.raises(EmbyError, match='无法唯一确定'):
+        service.play({'source':'sda','relpath':'movie-320-10.bif','time_ms':1000})
+    assert starts == [0, 200]
+
+
+def test_partial_filename_and_metadata_title_never_start_playback(runtime, monkeypatch):
+    service = configured(runtime.db)
+    def request(config, method, route, **kwargs):
+        assert method == 'GET'
+        return {'Items':[{'Id':'wrong','Name':'movie','Path':'/remote/movie-sequel.mkv'}], 'TotalRecordCount':1}
+    monkeypatch.setattr(service, 'request', request)
+    with pytest.raises(EmbyError, match='未找到唯一'):
+        service.play({'source':'sda','relpath':'movie-320-10.bif','time_ms':1000})
+
+
 def test_emby_http_token_stays_in_header_and_errors_are_redacted(runtime, monkeypatch):
     import httpx
     service = configured(runtime.db)

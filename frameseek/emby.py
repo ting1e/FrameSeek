@@ -73,6 +73,35 @@ def bif_stem(relative):
     return re.sub(r'-\d+-\d+$', '', stem)
 
 
+VIDEO_SUFFIXES = {'.mp4', '.mkv', '.avi', '.mov', '.webm', '.m4v', '.ts', '.m2ts'}
+
+
+def bif_filename(relative):
+    name = PurePosixPath(bif_stem(relative.replace('\\', '/'))).name
+    return str(PurePosixPath(name).with_suffix('')) if PurePosixPath(name).suffix.lower() in VIDEO_SUFFIXES else name
+
+
+def filename_search_terms(name):
+    terms = [name]
+    for part in re.split(r'[\s._\-\[\]()（）【】]+', name):
+        if len(part) >= 2 and not part.isdigit() and part not in terms:
+            terms.append(part)
+        if len(terms) == 3:
+            break
+    return terms
+
+
+def item_records(item):
+    if not item.get('Id'):
+        return []
+    records = []
+    for source in item.get('MediaSources') or [{}]:
+        path = source.get('Path') or item.get('Path')
+        if path:
+            records.append((video_stem(path), str(item['Id']), str(source.get('Id') or ''), path))
+    return records
+
+
 class Emby:
     def __init__(self, db, media_roots=None):
         self.db = db
@@ -231,11 +260,7 @@ class Emby:
                     'EnableImages':'false','EnableUserData':'false'})
                 items = payload.get('Items', [])
                 for item in items:
-                    media = item.get('MediaSources') or [{'Path':item.get('Path'),'Id':''}]
-                    for source in media:
-                        path = source.get('Path')
-                        if path and item.get('Id'):
-                            records.append((video_stem(path),str(item['Id']),str(source.get('Id') or ''),path))
+                    records.extend(item_records(item))
                 if (page+1)*1000 >= payload.get('TotalRecordCount', 0) or not items:
                     break
             else:
@@ -247,6 +272,46 @@ class Emby:
                 c.execute('DELETE FROM emby_items')
                 c.executemany('INSERT OR IGNORE INTO emby_items VALUES(?,?,?,?)', records)
                 c.execute("INSERT OR REPLACE INTO meta VALUES('emby_items_updated',?)", (str(time.time()),))
+
+    def filename_matches(self, config, name):
+        # Filename equality confirms a match; keywords only retrieve candidates.
+        expected = name.casefold()
+        candidates = {}
+        def add(item):
+            key = (item['stem'], item['item_id'], item['media_source_id'])
+            # An absent source ID is an incomplete listing, not another playback version.
+            if key[2]:
+                candidates.pop((*key[:2], ''), None)
+            elif any(existing[:2] == key[:2] and existing[2] for existing in candidates):
+                return
+            candidates[key] = item
+        for item in self.db.rows('SELECT * FROM emby_items'):
+            if PurePosixPath(item['stem']).name.casefold() == expected:
+                add(item)
+        if len(candidates) > 1:
+            raise EmbyError('Emby 中有多个同名视频或播放版本，无法唯一确定，请核对目录映射后重试。')
+        for term in filename_search_terms(name):
+            for page in range(10):
+                payload = self.request(config, 'GET', '/Items', params={
+                    'UserId':config.user_id, 'Recursive':'true', 'MediaTypes':'Video',
+                    'SearchTerm':term, 'Fields':'Path,MediaSources', 'StartIndex':page*200,
+                    'Limit':200, 'EnableImages':'false', 'EnableUserData':'false'})
+                items = payload.get('Items', [])
+                for item in items:
+                    for stem, item_id, media_id, path in item_records(item):
+                        if PurePosixPath(stem).name.casefold() == expected:
+                            add(dict(stem=stem, item_id=item_id, media_source_id=media_id, path=path))
+                if (page+1)*200 >= payload.get('TotalRecordCount', 0) or not items:
+                    break
+            else:
+                raise EmbyError('Emby 关键词结果过多，请核对目录映射后重试。')
+            if candidates:
+                break
+        if self.config() != config:
+            raise EmbyError('Emby 配置已变动，请重试。')
+        if len(candidates) > 1:
+            raise EmbyError('Emby 中有多个同名视频或播放版本，无法唯一确定，请核对目录映射后重试。')
+        return list(candidates.values())
 
     def resolve(self, row):
         if row.get('media_type') == 'image':
@@ -260,10 +325,12 @@ class Emby:
         target = normalize(root.rstrip('/') + '/' + bif_stem(row['relpath']))
         self.refresh(config)
         matches = self.db.rows('SELECT * FROM emby_items WHERE stem=?', (target,))
-        if not matches and PurePosixPath(target).suffix.lower() in {'.mp4','.mkv','.avi','.mov','.webm','.m4v','.ts','.m2ts'}:
+        if not matches and PurePosixPath(target).suffix.lower() in VIDEO_SUFFIXES:
             matches = self.db.rows('SELECT * FROM emby_items WHERE stem=?', (video_stem(target),))
+        if not matches:
+            matches = self.filename_matches(config, bif_filename(row['relpath']))
         if len(matches) != 1:
-            raise EmbyError('未找到唯一对应的 Emby 视频，请核对路径映射、确认媒体已入库，并在配置页刷新视频映射。')
+            raise EmbyError('未找到唯一对应的 Emby 视频，请确认文件名一致、媒体已入库，或在设置页刷新视频映射。')
         item = matches[0]
         return config, item
 

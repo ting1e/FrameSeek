@@ -34,33 +34,25 @@
 
 在“设置 → Emby 播放”中填写 Emby 服务地址和 API Key，点击“读取用户与网页设备”，选择播放用户和方式，再开启“点击搜索结果播放”。API 和网页共用一个地址，应用和浏览器都需能访问。API Key 在 Emby 管理后台创建。
 
-搜索到画面后，点击结果即可找到对应视频，并从命中时间播放：
-
-- **独立播放窗口**：新窗口直接播放视频。
-- **Emby 网页端**：打开 Emby 原生播放器，通过 API 播放并跳转到命中位置。可以每次新开网页端，也可以优先使用最近活跃的网页端，没有则新开；还可指定浏览器设备。
-
-使用网页端播放时，先在 Emby 网页端登录所选用户。同一浏览器的多个标签可能共享会话。Emby 媒体库需包含对应视频；找不到视频时，可在设置中刷新视频映射。
-
 
 ## 准备模型
 
 先手动下载 [DINOv3 ViT-L/16 LVD-1689M](https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m)，放到 `models/dinov3-vitl16`。目录中应有 `config.json` 和完整的 `.safetensors` 权重；分片模型还需要 `.safetensors.index.json`。模型页面需要申请访问。
 
+国内镜像下载 [DINOv3 ViT-L/16 LVD-1689M](https://modelscope.cn/models/facebook/dinov3-vitl16-pretrain-lvd1689m/files)
 
 ## 在 NAS 上运行
 
 使用 [`compose.ghcr.yml`](compose.ghcr.yml) 拉取 GitHub 构建好的 CPU 镜像，适用于 Intel/AMD NAS。
 
-把 Compose 文件放到项目目录，修改其中的媒体目录。镜像地址已设为 `ghcr.io/ting1e/frameseek:latest`。路径、端口、内存等启动配置直接写在 Compose；监控目录、处理线程和搜索选项在网站中设置。
+把 Compose 文件放到项目目录，修改其中的媒体目录。镜像地址 `ghcr.io/ting1e/frameseek:latest`。路径、端口、内存等启动配置直接写在 Compose；监控目录、处理线程和搜索选项在网站中设置。
 
-Compose 只填写媒体挂载：
-
+Compose 修改媒体挂载路径：
 ```yaml
 volumes:
   - /mnt/videos:/mnt/videos:ro
   - /mnt/archive:/mnt/archive:ro
 ```
-
 下载好模型、改好媒体目录后，在项目目录直接启动：
 
 ```bash
@@ -75,21 +67,11 @@ docker compose -f compose.ghcr.yml exec app cat /data/credentials.txt
 
 默认用户名为 `admin`，可在 Compose 中修改；重启沿用原来的登录信息。数据和首次启动配置保存在 `data`，模型目录保持只读。
 
-密码由 Python `secrets` 使用系统安全随机源生成，包含 144 位随机性。登录验证使用随机盐和 60 万次 PBKDF2-SHA256；首次生成的明文密码保存在 `data/credentials.txt`，Linux 权限为 `600`。保存好密码后可以删除这个文件，登录仍可正常使用。
 
-应用端口为 `127.0.0.1:18443`，接入 HTTPS 反向代理后访问。镜像若为私有包，先登录 `ghcr.io`；公开包可以直接拉取。Qdrant 数据目录放在 SSD/NVMe 上。
+应用端口为 `127.0.0.1:18443`，接入 HTTPS 反向代理后访问。镜
+登录网站后，在“设置”中填写需要监控的完整目录，每行一个，例如 `/mnt/videos` 或 `/mnt/videos/国产剧`，修改后自动保存到 SQLite，下一轮扫描生效。取消监控会保留已有索引；添加尚未挂载的宿主机目录时，先修改 Compose 挂载。点击后台任务中的手动扫描，或开启自动更新。
 
-登录网站后，在“设置”中填写需要监控的完整目录，每行一个，例如 `/mnt/videos` 或 `/mnt/videos/国产剧`，修改后自动保存到 SQLite，下一轮扫描生效。取消监控会保留已有索引；添加尚未挂载的宿主机目录时，先修改 Compose 挂载。点击后台任务中的手动扫描，或开启自动更新。NAS CPU 可以从每批 1 帧、4 个推理线程、1 个解码线程开始；修改线程和批次后重启应用。
-
-### 内存模式
-
-| 模式 | 读取方式 | Qdrant 上限 |
-|---|---|---|
-| `low_memory` | SSD 按需读取 | 2 GiB |
-| `high_memory` | 缓存预热 | 12 GiB |
-
-NAS 部署默认大内存模式，应用另有 4 GiB 上限。切换时在 Compose 中同时修改 Qdrant 的 `mem_limit` 和应用的 `IMGS_MODE`，重建容器即可继续使用原索引。
-
+### 
 ### 更新镜像
 
 在网页暂停后台任务，然后执行：
@@ -101,7 +83,6 @@ docker compose -f compose.ghcr.yml up -d
 
 更新后恢复后台任务。需要固定版本时，将镜像的 `latest` 改为版本号或 `sha-<完整提交SHA>`。模型、索引和网站配置都保存在挂载目录中。
 
-镜像将 PyTorch、其余依赖和程序分层保存。只修改页面或程序时，构建会复用依赖层；更新时 Docker 只下载本机缺少的新层，模型和索引不随镜像下载。GitHub 构建完成并通过启动检查后，直接发布同一个镜像。仅修改 README 或 demo 图片不会触发构建。
 
 ## 本地开发和建索引
 
