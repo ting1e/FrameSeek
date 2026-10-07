@@ -97,3 +97,12 @@ with tempfile.TemporaryDirectory() as temporary:
         print('Compose first start, generated credentials, Qdrant authentication and restart checks passed.')
     finally:
         run(['down','-v'])
+        # The Linux containers own their bind-mounted data as UID 10001.
+        # Return this test directory to the runner before TemporaryDirectory removes it.
+        if os.name == 'posix' and (folder / 'data').exists():
+            subprocess.run([
+                'docker','run','--rm','--network','none','--user','0:0',
+                '--entrypoint','chown','-v',str(folder / 'data') + ':/cleanup',
+                os.getenv('TEST_IMAGE','frameseek:ci'),
+                '-R',f'{os.getuid()}:{os.getgid()}','/cleanup',
+            ], check=True)
