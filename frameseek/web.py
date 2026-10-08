@@ -184,6 +184,15 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
         row = playable_frame(frame_id)
         return FileResponse(local_video_path(row), media_type='video/mp4')
 
+    @app.get('/api/emby/locate/{frame_id}')
+    def emby_locate(request: Request, frame_id: str):
+        auth.require(request)
+        row = playable_frame(frame_id)
+        try:
+            return emby.locate(row)
+        except EmbyError as error:
+            raise HTTPException(409, str(error)) from None
+
     @app.post('/api/emby/open/{frame_id}')
     def emby_open(request: Request, frame_id: str):
         auth.require(request, mutation=True)
@@ -327,7 +336,7 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
         auth.require(request, mutation=True)
         previous = requested(settings, runtime.db)
         # Older clients must not reset a saved inference choice when editing unrelated settings.
-        values = values.model_copy(update={name: previous[name] for name in ('device', 'precision') if name not in values.model_fields_set})
+        values = values.model_copy(update={name: previous[name] for name in ('device', 'precision', 'excluded_directories') if name not in values.model_fields_set})
         directories = values.monitor_directories
         values = Preferences.model_validate(values.model_dump(exclude={'monitor_directories'}))
         new_sources, registry = settings.sources, None
@@ -366,8 +375,10 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
         settings.stable_seconds = values.stable_seconds
         settings.default_top = values.default_top
         settings.collapse_results = values.collapse_results
+        exclusions_changed = settings.excluded_directories != values.excluded_directories
+        settings.excluded_directories = values.excluded_directories
         settings.monitor_folders = [folder.model_dump() for folder in values.monitor_folders]
-        if roots_changed or previous_scan != (settings.auto_update, settings.interval, settings.stable_seconds, settings.monitor_folders):
+        if exclusions_changed or roots_changed or previous_scan != (settings.auto_update, settings.interval, settings.stable_seconds, settings.monitor_folders):
             runtime.worker.configuration_changed()
         return {'ok': True, 'restart_required': any(values.model_dump()[key] != current(settings)[key]
                 for key in values.model_dump() if key not in {'default_top', 'collapse_results'}),

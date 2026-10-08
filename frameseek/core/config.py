@@ -84,6 +84,7 @@ class Settings:
     app_memory_gib: int = 4
     default_top: int = 20
     collapse_results: bool = True
+    excluded_directories: list[str] = field(default_factory=list)
     monitor_folders: list[dict] | None = None
 
     def __post_init__(self):

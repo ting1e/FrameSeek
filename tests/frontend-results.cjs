@@ -29,7 +29,8 @@ assert.equal(article.querySelector('.card-bottom').querySelector('.frame-index')
 const play=article.querySelector('.emby-play-button'); assert.equal(play.hidden,true);
 assert.ok(play.className.includes('btn-primary'));
 const nearby=article.querySelector('.result-nearby'); assert.equal(nearby.textContent,'附近画面'); assert.ok(nearby.className.includes('btn-outline'));
-assert.equal(article.querySelector('.result-actions').children.length,2);
+assert.equal(article.querySelector('.result-actions').children.length,3);
+assert.equal(article.querySelector('.result-actions').children[1].textContent,'Emby 定位');
 const image=article.querySelector('img'), unavailable=article.querySelector('.preview-unavailable');
 image.emit('error'); assert.equal(image.hidden,true); assert.equal(unavailable.hidden,false);
 article.querySelectorAll('.hit-position')[1].emit('click'); assert.equal(image.src,second.preview_url); assert.equal(unavailable.hidden,true);
@@ -66,3 +67,23 @@ context.displayResults({results:[first,second],collapsed:true,elapsed_ms:1000});
 assert.equal(element('results').children.length,1);
 assert.equal(element('result-count').textContent,'1 个 BIF · 2 个命中位置');
 console.log('Mixed image/BIF results, type controls, grouping, previews, Emby buttons and progress checks passed.');
+
+const dialog=element('frame-dialog'), box=new Element();
+box.getBoundingClientRect=()=>({left:100,right:500,top:100,bottom:500});
+box.className='modal-box'; dialog.append(box); let closed=0; dialog.close=()=>closed++;
+const backdrop=dialog.listeners.click[0];
+backdrop({target:dialog,clientX:20,clientY:20}); assert.equal(closed,1);
+backdrop({target:dialog,clientX:200,clientY:200}); assert.equal(closed,1);
+backdrop({target:box,clientX:20,clientY:20}); assert.equal(closed,1);
+(async()=>{
+  const calls=[], popups=[];
+  context.window.open=()=>{const popup={location:{},close(){this.closed=true;}};popups.push(popup);return popup;};
+  context.fetch=async url=>{calls.push(url);return {ok:true,status:200,json:async()=>({url:'https://emby.example/web/index.html#!/videos?serverId=s&parentId=p'})};};
+  await article.querySelector('.emby-locate-button').listeners.click[0]();
+  assert.equal(calls[0],'/api/emby/locate/two');
+  assert.equal(popups[0].location.href,'https://emby.example/web/index.html#!/videos?serverId=s&parentId=p');
+  assert.equal(popups[0].opener,null);
+  await photo.querySelector('.emby-locate-button').listeners.click[0]();
+  assert.equal(calls[1],'/api/emby/locate/photo');
+  console.log('Backdrop close and Emby folder-location checks passed.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

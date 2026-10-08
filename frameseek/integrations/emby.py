@@ -8,7 +8,7 @@ import time
 import secrets
 import uuid
 from pathlib import PurePosixPath
-from urllib.parse import urlsplit, quote
+from urllib.parse import urlsplit, quote, urlencode
 from typing import Literal
 from datetime import datetime, timezone
 
@@ -339,6 +339,47 @@ class Emby:
             raise EmbyError('未找到唯一对应的 Emby 视频，请确认文件名一致、媒体已入库，或在设置页刷新视频映射。')
         item = matches[0]
         return config, item
+
+    def locate(self, row):
+        config = self.config()
+        if not config.enabled:
+            raise EmbyError('请先在设置页启用 Emby。')
+        details = None
+        if row.get('media_type') != 'image':
+            config, item = self.resolve(row)
+            details = self.request(config, 'GET', '/Users/' + quote(config.user_id, safe='') + '/Items/' + quote(item['item_id'], safe=''))
+            parent = details.get('ParentId')
+        else:
+            root = config.source_paths.get(row['source'])
+            if not root:
+                raise EmbyError('该图片来源没有对应的 Emby 目录。')
+            target = normalize(root.rstrip('/') + '/' + row['relpath'])
+            directory = str(PurePosixPath(target).parent)
+            parent = None
+            for kind, term in [('Photo', PurePosixPath(target).stem), ('Folder', PurePosixPath(directory).name)]:
+                for page in range(10):
+                    params = {'UserId':config.user_id,'Recursive':'true','SearchTerm':term,
+                              'Fields':'Path','StartIndex':page*200,'Limit':200}
+                    params.update({'MediaTypes':'Photo'} if kind == 'Photo' else {'IsFolder':'true'})
+                    result = self.request(config, 'GET', '/Items', params=params)
+                    matches = [item for item in result.get('Items', []) if normalize(item.get('Path','')).rstrip('/') == (target if kind == 'Photo' else directory)]
+                    ids = {str(item['Id']) for item in matches if item.get('Id')}
+                    if len(ids) > 1:
+                        raise EmbyError('Emby 中该目录或图片存在多个匹配项。')
+                    if ids:
+                        details = self.request(config, 'GET', '/Users/' + quote(config.user_id,safe='') + '/Items/' + quote(ids.pop(),safe=''))
+                        parent = details.get('ParentId') if kind == 'Photo' else details.get('Id')
+                        break
+                    if not result.get('Items') or (page+1)*200 >= result.get('TotalRecordCount',0):
+                        break
+                if parent:
+                    break
+        if not parent:
+            raise EmbyError('未找到该媒体在 Emby 中的文件夹列表。')
+        server = (details or {}).get('ServerId') or self.request(config, 'GET', '/System/Info').get('Id')
+        if not server:
+            raise EmbyError('无法获取 Emby 服务器 ID。')
+        return {'url':config.server_url + '/web/index.html#!/videos?' + urlencode({'serverId':str(server),'parentId':str(parent)})}
 
     def prepare(self, row):
         config, item = self.resolve(row)

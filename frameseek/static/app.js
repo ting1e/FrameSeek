@@ -154,7 +154,7 @@ function card(result, rank = 0) {
   if (isImage) {
     const bottom = node("div", "card-bottom"), view = node("button", "btn btn-ghost btn-xs text-primary", "查看图片 ↗");
     view.addEventListener("click", () => neighbors(result.id));
-    bottom.append(node("span", "", "图片"), view); body.append(bottom); article.append(thumbnail, body); return article;
+    bottom.append(node("span", "", "图片"), view, embyLocateButton(() => result.id)); body.append(bottom); article.append(thumbnail, body); return article;
   }
   body.append(node("p", "bif-duration", result.duration_ms == null ? "时长未知" : `时长约 ${timeLabel(result.duration_ms)}`));
   const bottom = node("div", "card-bottom"), actions = node("div", "result-actions");
@@ -162,7 +162,7 @@ function card(result, rank = 0) {
   nearby.type = "button"; nearby.addEventListener("click", () => neighbors(selected.id));
   const play = node("button", "btn btn-primary btn-sm result-action emby-play-button", embyPlayLabel());
   play.type = "button"; play.addEventListener("click", () => playInEmby(selected.id, play)); play.hidden = !embyEnabled;
-  actions.append(nearby, play);
+  actions.append(nearby, embyLocateButton(() => selected.id), play);
   bottom.append(actions); body.append(bottom);
   const members = result.group?.length ? result.group : [result];
   body.append(node("p", "hit-label", `${members.length} 个命中位置`));
@@ -208,7 +208,21 @@ function prepareResults(data) {
   return (data.collapsed ?? data.collapse ?? true) ? groupResults(data.results) : data.results;
 }
 function embyPlayLabel() { return embySaved?.playback_mode === "emby_web" ? "Emby 网页播放" : "新窗口播放"; }
+function embyLocateButton(frame) {
+  const button = node("button", "btn btn-outline btn-sm result-action emby-locate-button", "Emby 定位");
+  button.type = "button"; button.hidden = !embyEnabled;
+  button.addEventListener("click", async () => {
+    const popup = window.open("about:blank", "_blank");
+    if (!popup) { message("请允许打开新窗口后重试。", true); return; }
+    popup.opener = null; button.disabled = true;
+    try { const data = await api(`/api/emby/locate/${encodeURIComponent(frame())}`); popup.location.href = data.url; }
+    catch (error) { popup.close(); message(error.message, true); }
+    finally { button.disabled = false; }
+  });
+  return button;
+}
 function updateEmbyButtons() {
+  for (const button of document.querySelectorAll(".emby-locate-button")) button.hidden = !embyEnabled;
   for (const button of document.querySelectorAll(".emby-play-button")) {
     button.hidden = !embyEnabled; button.textContent = embyPlayLabel();
   }
@@ -257,6 +271,7 @@ async function neighbors(id) {
   try { const data = await api(`/api/frames/${id}/neighbors`); $("dialog-path").textContent = `${data.root_directory || directoryRoot(data.source)}/${data.relpath}`; for (const frame of data.frames) { const item = node("div", "neighbor"), image = node("img"); image.src = `/api/frames/${frame.id}`; image.alt = data.media_type === "image" ? data.relpath : timeLabel(frame.time_ms); item.append(image, node("p", "", data.media_type === "image" ? "原图预览" : `${timeLabel(frame.time_ms)} · 第 ${frame.frame_no + 1} 帧${frame.id === id ? " · 命中" : ""}`)); $("neighbor-frames").append(item); } }
   catch (error) { $("dialog-error").textContent = error.message; }
 }
+$("frame-dialog").addEventListener("click", event => { if (event.target === $("frame-dialog")) { const box = $("frame-dialog").querySelector(".modal-box").getBoundingClientRect(); if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) $("frame-dialog").close(); } });
 $("dialog-close").addEventListener("click", () => $("frame-dialog").close());
 async function runTaskAction(action) {
   if (taskActionBusy) return;
@@ -422,6 +437,7 @@ async function loadSettings(initial = false) {
   $("settings-message").textContent = data.restart_required ? "已保存；推理设备、精度、线程或批次设置需重启应用。" : "";
   monitorSources = data.source_directories;
   $("monitor-directories").value = data.monitor_directories.join("\n");
+  $("excluded-directories").value = (data.saved.excluded_directories || []).join("\n");
   if (initial) { $("top").value = data.saved.default_top; $("collapse").checked = data.saved.collapse_results; }
 }
 $("settings-tab").addEventListener("click", () => { switchWorkspace("settings"); loadSettings().catch(error => $("settings-message").textContent = error.message); loadEmbySettings().catch(error => $("emby-message").textContent = error.message); });
@@ -458,6 +474,7 @@ function createAutoSave(formId, messageId, save) {
 const settingsAutoSave = createAutoSave("settings-form", "settings-message", async () => {
   const values = {...savedSettings};
   for (const [name,id] of Object.entries(settingsControls)) { const input = $(id); values[name] = input.type === "checkbox" ? input.checked : (["device","precision"].includes(name) ? input.value : Number(input.value)); }
+  values.excluded_directories = parseMonitorDirectories($("excluded-directories").value);
   values.monitor_directories = parseMonitorDirectories($("monitor-directories").value);
   values.scan_interval_seconds = Math.round(values.scan_interval_seconds * 3600);
   const result = await api("/api/settings", {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(values)});

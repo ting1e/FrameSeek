@@ -9,7 +9,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from frameseek.core.paths import original_relative
-from frameseek.engine.monitoring import folders, includes, visit_directory
+from frameseek.engine.monitoring import folders, includes, visit_directory, excluded
 from frameseek.media.images import supported
 
 
@@ -38,7 +38,8 @@ class MediaWatcher(FileSystemEventHandler):
         scope = folders(self.settings, self.db) if enabled else []
         roots = {name:root.resolve() for name,root in self.settings.sources.items()}
         signature = (tuple(sorted((item['source'],item['path']) for item in scope)),
-                     tuple(sorted((name,str(root)) for name,root in roots.items())))
+                     tuple(sorted((name,str(root)) for name,root in roots.items())),
+                     tuple(sorted((item['source'],item['path']) for item in getattr(scope,'excluded',[]))))
         if signature == self.signature:
             return
         self.stop()
@@ -48,7 +49,7 @@ class MediaWatcher(FileSystemEventHandler):
             return
         observer = Observer()
         try:
-            paths = sorted({roots[item['source']] / item['path'] for item in scope}, key=lambda p:len(p.parts))
+            paths = sorted({roots[item['source']] / item['path'] for item in scope if not excluded(scope,item['source'],item['path'])}, key=lambda p:len(p.parts))
             selected = []
             for path in paths:
                 # A missing selected folder can be created later under its existing parent.
@@ -57,6 +58,8 @@ class MediaWatcher(FileSystemEventHandler):
                 if not any(path == parent or parent in path.parents for parent in selected):
                     selected.append(path)
                     observer.schedule(self, str(path), recursive=True)
+            if not selected:
+                return
             observer.start()
             self.observer = observer
         except Exception as error:
@@ -93,7 +96,7 @@ class MediaWatcher(FileSystemEventHandler):
                 except ValueError:
                     continue
                 if event.is_directory:
-                    if visit_directory(self.scope, source, relative) or relative in {'', '.'}:
+                    if not excluded(self.scope, source, relative) and (visit_directory(self.scope, source, relative) or relative in {'', '.'}):
                         with self.lock:
                             self.rescan = True
                         self.wake.set()

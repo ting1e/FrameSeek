@@ -329,3 +329,43 @@ def test_web_target_new_recent_shared_and_offline_fallback(runtime, monkeypatch)
     sessions[0]['LastActivityDate']='2026-10-06T10:05:00Z'
     assert service.web_poll(row,plan['ticket'])['shared_session']
     with pytest.raises(EmbyError,match='失效'): service.web_poll({**row,'id':'wrong'},plan['ticket'])
+
+
+@pytest.mark.parametrize('server_in_item',[True,False])
+def test_locate_video_opens_parent_list_without_playing(runtime,monkeypatch,server_in_item):
+    service=configured(runtime.db)
+    monkeypatch.setattr(service,'resolve',lambda row:(service.config(),{'item_id':'video'}))
+    routes=[]
+    def request(config,method,route,**kwargs):
+        routes.append(route)
+        if route=='/System/Info':return {'Id':'server-id'}
+        assert route=='/Users/u1/Items/video'
+        return {'ParentId':'folder-id',**({'ServerId':'server-id'} if server_in_item else {})}
+    monkeypatch.setattr(service,'request',request)
+    url=service.locate({'media_type':'bif'})['url']
+    assert url=='https://emby.example/web/index.html#!/videos?serverId=server-id&parentId=folder-id'
+    assert 'secret-key' not in url
+    assert ('/System/Info' in routes) != server_in_item
+
+
+@pytest.mark.parametrize('photo_found',[True,False])
+def test_locate_photo_or_containing_folder(runtime,monkeypatch,photo_found):
+    service=configured(runtime.db)
+    def request(config,method,route,**kwargs):
+        if route=='/Items':
+            photo=kwargs['params'].get('MediaTypes')=='Photo'
+            return {'Items':([{'Id':'photo','Path':'/videos/a/相册/one.png'}] if photo_found else []) if photo else [{'Id':'album','Path':'/videos/a/相册'}],'TotalRecordCount':1}
+        return {'Id':'album','ParentId':'album','ServerId':'server-id'}
+    monkeypatch.setattr(service,'request',request)
+    assert service.locate({'source':'sda','relpath':'相册/one.png','media_type':'image'})['url'].endswith('parentId=album')
+
+
+def test_locate_endpoint_requires_login_and_published_frame(runtime,monkeypatch):
+    write_bif(runtime.settings.sources['sda']/'one.bif');build(runtime)
+    frame=runtime.db.one('SELECT id FROM frames')['id']
+    monkeypatch.setattr(Emby,'locate',lambda self,row:{'url':'https://emby.example/web/index.html#!/videos?serverId=s&parentId=p'})
+    with TestClient(create_app(runtime.settings,runtime)) as client:
+        assert client.get('/api/emby/locate/'+frame).status_code==401
+        client.post('/api/login',json={'username':'admin','password':'testing-secret'})
+        assert client.get('/api/emby/locate/'+frame).json()['url'].endswith('parentId=p')
+        assert client.get('/api/emby/locate/missing').status_code==410

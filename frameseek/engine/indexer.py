@@ -455,6 +455,7 @@ class BackgroundWorker:
         self.watcher.stop()
 
     def configuration_changed(self):
+        self.task_interrupt.set()
         self.config_event.set()
         self.wake_event.set()
 
@@ -525,7 +526,7 @@ class BackgroundWorker:
                         self.task_interrupt.clear()
                     try:
                         indexer.process_version(job["id"], self.stop_event, yield_at=next_scan if automatic else float('inf'), yield_requested=self.wake_event)
-                        if self.task_interrupt.is_set():
+                        if self.task_interrupt.is_set() and (self.suspended_task or {}).get('version') == job['id']:
                             self.manual_active = False
                             self.runtime.db.execute("INSERT OR REPLACE INTO meta VALUES('manual_encoding','false')")
                             break

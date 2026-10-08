@@ -139,3 +139,39 @@ def test_older_index_without_registry_can_recover_root_from_selected_subdirector
         build(runtime)
         assert runtime.db.rows('SELECT id,active_version FROM files') == original
         assert runtime.embedder.calls == calls
+
+
+def test_excluded_directories_stop_scanning_queued_encoding_and_keep_published(runtime):
+    from frameseek.engine.monitoring import folders, includes, visit_directory
+    from watchdog.events import FileModifiedEvent
+    root=runtime.settings.sources['sda']
+    kept=write_bif(root/'skip'/'existing.bif')
+    queued=write_bif(root/'skip'/'queued.bif')
+    indexer=runtime.get_indexer();indexer.scan(True)
+    existing=runtime.db.one("SELECT desired_version FROM files WHERE relpath='skip/existing.bif'")['desired_version']
+    indexer.process_version(existing)
+    with TestClient(create_app(runtime.settings,runtime)) as client:
+        runtime.worker.stop()
+        headers=login(client)
+        values=client.get('/api/settings').json()['saved']
+        response=client.put('/api/settings',headers=headers,json={**values,'excluded_directories':[(root/'skip').as_posix()]})
+        assert response.status_code==200
+        scope=folders(runtime.settings,runtime.db)
+        assert not includes(scope,'sda','skip/new.bif') and not visit_directory(scope,'sda','skip')
+        assert includes(scope,'sda','skip-backup/new.bif')
+        assert not indexer.pending()
+        version=runtime.db.one("SELECT desired_version FROM files WHERE relpath='skip/queued.bif'")['desired_version']
+        assert indexer.process_version(version)==0
+        write_bif(root/'skip'/'new.bif');write_bif(root/'skip-backup'/'allowed.bif')
+        kept.unlink()
+        indexer.scan(True)
+        assert runtime.db.one("SELECT id FROM files WHERE relpath='skip/new.bif'") is None
+        assert runtime.db.one("SELECT active_version FROM files WHERE relpath='skip/existing.bif'")['active_version']==existing
+        assert len(indexer.pending())==1
+        restored=Settings(data=runtime.settings.data,model=runtime.settings.model)
+        assert restored.excluded_directories==[(root/'skip').as_posix()]
+        watcher=runtime.worker.watcher;watcher.scope=scope;watcher.roots=runtime.settings.sources
+        watcher.on_any_event(FileModifiedEvent(str(queued)))
+        assert not watcher.has_pending
+        values=client.get('/api/settings').json()['saved'];values['excluded_directories']=['../outside']
+        assert client.put('/api/settings',headers=headers,json=values).status_code==422

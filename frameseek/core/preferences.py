@@ -41,6 +41,19 @@ class Preferences(BaseModel):
     stable_seconds: int = Field(60, ge=0, le=3600)
     default_top: Literal[20, 50, 100, 200, 500] = 20
     collapse_results: bool = True
+    excluded_directories: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("excluded_directories")
+    @classmethod
+    def excluded_paths(cls, values):
+        result = []
+        for value in values:
+            value = value.strip().replace("\\", "/")
+            if not value or len(value) > 2000 or "\x00" in value or ".." in value.split("/") or not (value.startswith("/") or re.match(r"^[A-Za-z]:/", value)):
+                raise ValueError("排除目录请填写完整路径，每行一个")
+            result.append(value.rstrip("/") or "/")
+        return list(dict.fromkeys(result))
+
     monitor_folders: list[MonitorFolder] = Field(default_factory=list, max_length=100)
 
     @field_validator('device')
