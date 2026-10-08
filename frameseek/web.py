@@ -412,7 +412,7 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
         progress = runtime.progress.update(totals['completed'], totals['remaining'],
             (condition, tuple(arguments)),
             active=bool(totals['remaining'] and (settings.auto_update or runtime.worker.manual_active or tasks['processing'])),
-            paused=is_paused, blocked=bool(not (tasks['queued'] or tasks['processing']) and (tasks['failed'] or tasks['stabilizing'])),
+            paused=is_paused or bool(runtime.worker.suspended_task and not runtime.worker.manual_active and runtime.worker.activity in {'idle','disabled','task_paused'}), blocked=bool(not (tasks['queued'] or tasks['processing']) and (tasks['failed'] or tasks['stabilizing'])),
             scanning=runtime.worker.activity in {'scanning','checking_changes','reparsing'})
         if current_task and current_task["source"] in settings.sources:
             current_task["root_directory"] = settings.sources[current_task["source"]].resolve().as_posix()
@@ -420,7 +420,7 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
         return {**stats, "mode": settings.mode, "model": "DINOv3 ViT-L/16",
                 "model_ready": model_ready, "fingerprint": manifest.get("fingerprint"),
                 "activity": runtime.worker.activity, "worker_error": runtime.worker.error,
-                "auto_update": settings.auto_update, "paused": bool(paused and paused["value"] == "true"),
+                "suspended_task": runtime.worker.suspended_task, "auto_update": settings.auto_update, "paused": bool(paused and paused["value"] == "true"),
                 "realtime_monitoring": runtime.worker.watcher.active, "watcher_error": runtime.worker.watcher.error,
                 "csrf": auth.csrf(token), "sources": list(settings.sources),
                 "tasks": {key: value or 0 for key, value in tasks.items()}, "current_task": current_task, "progress":progress,
@@ -621,6 +621,12 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
     @app.post("/api/updates/{action}")
     def pause(request: Request, action: str):
         auth.require(request, mutation=True)
+        if action in {"pause-current", "resume-current"}:
+            try:
+                (runtime.worker.pause_current if action == 'pause-current' else runtime.worker.resume_current)()
+            except ValueError as error:
+                raise HTTPException(409, str(error))
+            return {'message': '当前任务暂停后可执行其他手动任务。' if action == 'pause-current' else '已请求继续之前的任务。'}
         if action not in {"pause", "resume"}:
             raise HTTPException(404, "Unknown action")
         runtime.db.execute("INSERT OR REPLACE INTO meta VALUES('paused',?)", ("true" if action == "pause" else "false",))

@@ -24,7 +24,7 @@ async function api(path, options = {}) {
 function showLogin() { $("session-loading").hidden = true; historyLoaded = false;  $("login-section").hidden = false; $("search-section").hidden = true; $("header-status").hidden = true; if (polling) clearInterval(polling); polling = null; }
 function showSearch() { $("session-loading").hidden = true; if (!historyLoaded) { historyLoaded = true; loadSettings(true).catch(() => {}); loadEmbySettings().catch(() => {}); refreshHistory().catch(() => { historyLoaded = false; }); }  $("login-section").hidden = true; $("search-section").hidden = false; $("header-status").hidden = false; if (!polling) polling = setInterval(() => refreshStatus().catch(() => {}), 10000); }
 function taskEventLabel(kind) {
-  return ({scan:"目录扫描",watch_update:"变动检查",watch_error:"监听异常",bif_modified:"文件变动",indexed:"特征更新完成",scan_error:"扫描异常",index_error:"处理失败",search_error:"搜索异常",history_error:"历史保存异常"})[kind] || "任务记录";
+  return ({task_pause:"任务暂停",task_resume:"任务继续",scan:"目录扫描",watch_update:"变动检查",watch_error:"监听异常",bif_modified:"文件变动",indexed:"特征更新完成",scan_error:"扫描异常",index_error:"处理失败",search_error:"搜索异常",history_error:"历史保存异常"})[kind] || "任务记录";
 }
 function taskEventMessage(event) {
   if (event.kind === "scan" || event.kind === "watch_update") {
@@ -38,19 +38,19 @@ async function refreshStatus() {
   $("task-frames").textContent = status.frames.toLocaleString();
   const tasks = status.tasks || {queued:status.pending,processing:0,failed:0,stabilizing:0};
   $("pending-count").textContent = `等待稳定 ${tasks.stabilizing} · 待编码 ${tasks.queued} · 编码中 ${tasks.processing} · 解析失败 ${tasks.parse_failed || 0} · 编码失败 ${tasks.failed - (tasks.parse_failed || 0)}`;
-  paused = status.paused; $("pause").textContent = paused ? "恢复更新" : "暂停更新";
+  paused = Boolean(status.suspended_task); $("pause").textContent = paused ? "继续任务" : "暂停当前任务";
   const directories = status.monitor_directories || [];
-  const labels = {idle:tasks.stabilizing ? "等待文件稳定" : (status.manual_active ? "本次更新仍在进行" : (status.realtime_monitoring ? "正在监听文件变动" : "等待下一次检查")),paused:"更新已暂停",disabled:"手动更新模式",scanning:"正在扫描监控目录",checking_changes:"正在检查变动文件",reparsing:"正在重新解析失败文件",cleanup:"正在清理旧版本向量",error:"更新遇到错误"};
-  $("task-label").textContent = paused ? (status.activity === "paused" ? "更新已暂停" : "正在等待当前分块结束后暂停") : (!directories.length ? "未设置监控目录" : (status.scan_requested ? "检查请求等待执行" : (status.activity.startsWith("indexing:") ? "正在提取画面特征" : (labels[status.activity] || "正在读取任务状态"))));
+  const labels = {idle:tasks.stabilizing ? "等待文件稳定" : (status.manual_active ? "本次更新仍在进行" : (status.realtime_monitoring ? "正在监听文件变动" : "等待下一次检查")),paused:"更新已暂停",task_paused:"当前任务已暂停",disabled:"手动更新模式",scanning:"正在扫描监控目录",checking_changes:"正在检查变动文件",reparsing:"正在重新解析失败文件",cleanup:"正在清理旧版本向量",error:"更新遇到错误"};
+  $("task-label").textContent = paused && ["idle","disabled","task_paused"].includes(status.activity) ? "当前任务已暂停" : (!directories.length ? "未设置监控目录" : (status.scan_requested ? "检查请求等待执行" : (status.activity.startsWith("indexing:") ? "正在提取画面特征" : (labels[status.activity] || "正在读取任务状态"))));
   $("task-updated").textContent = `状态更新于 ${new Date().toLocaleTimeString("zh-CN", {hour:"2-digit",minute:"2-digit",second:"2-digit"})}`;
-  $("task-hint").textContent = paused ? "暂停后保留处理进度。点击“恢复更新”继续；已完成的画面仍可搜索。" : (!directories.length ? "到设置页填写监控目录后，再检查文件变动。" : (status.manual_active && !status.auto_update ? "正在执行一次手动更新；全部任务完成后回到手动模式。编码失败会按退避时间重试；扫描异常需修复后再次检查。" : (!status.auto_update ? "先点击“手动扫描”发现文件，再点击“手动编码”处理队列。解析失败的文件可单独重新解析。" : "系统实时监听文件变动，并定期扫描补查。手动扫描只检查文件，手动编码处理已建立的任务；重新解析用于再次尝试解析失败文件。")));
+  $("task-hint").textContent = paused ? "已保留暂停任务的进度。可执行其他手动任务，点击“继续任务”恢复。" : (!directories.length ? "到设置页填写监控目录后，再检查文件变动。" : (status.manual_active && !status.auto_update ? "正在执行一次手动更新；全部任务完成后回到手动模式。编码失败会按退避时间重试；扫描异常需修复后再次检查。" : (!status.auto_update ? "先点击“手动扫描”发现文件，再点击“手动编码”处理队列。解析失败的文件可单独重新解析。" : "系统实时监听文件变动，并定期扫描补查。手动扫描只检查文件，手动编码处理已建立的任务；重新解析用于再次尝试解析失败文件。")));
   renderTaskProgress(status.progress);
   const current = status.current_task;
   $("task-progress").hidden = !current;
   if (current) $("task-progress").textContent = `${current.root_directory || directoryRoot(current.source)}/${current.relpath}\n已保存 ${current.cursor.toLocaleString()} / ${current.total.toLocaleString()} 帧。完整文件处理完后才可搜索。`;
-  for (const id of ["encode","reparse"]) $(id).disabled = taskActionBusy || paused || !directories.length;
-  $("scan").disabled = taskActionBusy || paused || !directories.length || status.scan_requested || status.activity === "scanning";
-  $("pause").disabled = taskActionBusy;
+  for (const id of ["encode","reparse"]) $(id).disabled = taskActionBusy || status.paused || !directories.length;
+  $("scan").disabled = taskActionBusy || status.paused || !directories.length || status.scan_requested || status.activity === "scanning";
+  $("pause").disabled = taskActionBusy || (!paused && !["scanning","checking_changes","reparsing"].includes(status.activity) && !status.activity.startsWith("indexing:"));
   $("task-error").textContent = !status.model_ready ? "模型尚未准备好，请先完成模型下载。" : (status.worker_error || (status.watcher_error ? "实时监听未启动，当前使用定时扫描。" : "") || (tasks.failed ? `${tasks.parse_failed || 0} 个文件解析失败，${tasks.failed - (tasks.parse_failed || 0)} 个编码任务失败；其他任务可继续处理。` : ""));
   await refreshTaskEvents();
 }
@@ -284,13 +284,12 @@ $("events-clear-confirm").addEventListener("click", async event => {
   catch(error) { $("events-clear-error").textContent=error.message; }
   finally { button.disabled=false; }
 });
-$("pause").addEventListener("click", () => runTaskAction(paused ? "resume" : "pause"));
+$("pause").addEventListener("click", () => runTaskAction(paused ? "resume-current" : "pause-current"));
 $("refresh-tasks").addEventListener("click", async event => {
   const button = event.currentTarget; button.disabled = true;
   try { await refreshStatus(); } catch (error) { $("task-error").textContent = error.message; }
   finally { button.disabled = false; }
 });
-$("task-config").addEventListener("click", () => { switchWorkspace("settings"); loadSettings().catch(error => $("settings-message").textContent = error.message); loadEmbySettings().catch(error => $("emby-message").textContent = error.message); });
 async function initializeSession() {
   $("session-loading").hidden = false; $("session-loading").setAttribute("aria-busy", "true");
   $("session-spinner").hidden = false; $("session-retry").hidden = true;

@@ -80,3 +80,54 @@ def test_progress_scope_key_survives_new_jobs_and_failures_do_not_block_queue(ru
         write_bif(runtime.settings.sources['sda']/'two.bif');runtime.get_indexer().scan(True)
         client.get('/api/status')
         assert captured[0][0]==captured[-1][0]
+
+
+def test_pause_encoding_allows_other_tasks_and_resumes_cursor(runtime):
+    import threading
+    write_bif(runtime.settings.sources['sda']/'one.bif', colors=('red',)*6)
+    indexer=runtime.get_indexer();indexer.scan(True)
+    entered=threading.Event();release=threading.Event()
+    original=runtime.embedder.embed
+    def delayed(images, search=False):
+        entered.set();assert release.wait(8)
+        return original(images, search)
+    runtime.embedder.embed=delayed
+    app=create_app(runtime.settings,runtime)
+    with TestClient(app) as client:
+        login=client.post('/api/login',json={'username':'admin','password':'testing-secret'})
+        headers={'X-CSRF-Token':login.json()['csrf']}
+        client.post('/api/updates/index',headers=headers)
+        assert entered.wait(8)
+        assert client.post('/api/updates/pause-current',headers=headers).status_code==200
+        release.set()
+        eventually(lambda:runtime.worker.activity=='task_paused')
+        saved=runtime.db.one("SELECT * FROM versions")
+        assert saved['cursor']==2 and saved['status']=='pending'
+        write_bif(runtime.settings.sources['sda']/'two.bif',colors=('blue',))
+        assert client.post('/api/updates/scan',headers=headers).status_code==200
+        eventually(lambda:runtime.db.one("SELECT desired_version FROM files WHERE relpath='two.bif'") is not None)
+        assert client.post('/api/updates/index',headers=headers).status_code==200
+        eventually(lambda:runtime.db.stats()['frames']==1)
+        assert runtime.db.one('SELECT cursor FROM versions WHERE id=?',(saved['id'],))['cursor']==2
+        assert client.get('/api/status').json()['suspended_task']['version']==saved['id']
+        assert client.post('/api/updates/resume-current',headers=headers).status_code==200
+        eventually(lambda:runtime.db.stats()['frames']==7)
+        assert client.get('/api/status').json()['suspended_task'] is None
+
+
+def test_interrupted_scan_does_not_delete_unvisited_files(runtime, monkeypatch):
+    import threading
+    write_bif(runtime.settings.sources['sda']/'one.bif')
+    write_bif(runtime.settings.sources['sda']/'two.bif')
+    indexer=runtime.get_indexer();indexer.scan(True)
+    interrupted=threading.Event()
+    original=runtime.db.execute
+    def execute(sql,args=()):
+        result=original(sql,args)
+        if sql.startswith('UPDATE files SET seen='):
+            interrupted.set()
+        return result
+    monkeypatch.setattr(runtime.db,'execute',execute)
+    result=indexer.scan(interrupt=interrupted)
+    assert result['interrupted'] is True
+    assert runtime.db.one("SELECT COUNT(*) AS n FROM files WHERE status='deleted'")['n']==0

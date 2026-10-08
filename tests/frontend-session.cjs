@@ -97,19 +97,19 @@ async function check(outcome) {
   if (outcome === 200) {
     assert.equal(element('scan').disabled, true); // No monitored directories.
     status.monitor_directories = ['/mnt/test/sda/video'];
-    status.paused = true; status.activity = 'indexing:one';
+    status.paused = false; status.suspended_task = {version:'one'}; status.activity = 'task_paused';
     await vm.runInContext('refreshStatus()', context);
-    assert.equal(element('pause').textContent, '恢复更新');
-    assert.equal(element('scan').disabled, true);
-    assert.match(element('task-label').textContent, /分块/);
-    status.paused = false; status.scan_requested = true;
+    assert.equal(element('pause').textContent, '继续任务');
+    assert.equal(element('scan').disabled, false);
+      assert.match(element('task-label').textContent, /已暂停/);
+    status.suspended_task = null; status.paused = false; status.scan_requested = true;
     await vm.runInContext('refreshStatus()', context);
     assert.equal(element('task-label').textContent, '检查请求等待执行');
     assert.equal(element('scan').disabled, true);
     status.scan_requested = false; status.activity = 'disabled';
     await vm.runInContext('refreshStatus()', context);
     assert.equal(element('scan').disabled, false);
-    assert.equal(element('pause').textContent, '暂停更新');
+    assert.equal(element('pause').textContent, '暂停当前任务');
     assert.match(context.taskEventMessage({kind:'scan',message:'{"observed":10,"modified":2}'}), /变动 2 个/);
     const windows=[], calls=[], popups=[];
     context.window={open:(...args)=>{windows.push(args); const popup={location:{href:args[0]},closed:false,close(){this.closed=true;}}; popups.push(popup); return popup;}};

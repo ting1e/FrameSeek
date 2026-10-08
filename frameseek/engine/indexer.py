@@ -57,7 +57,7 @@ class Indexer:
     def path(self, source: str, relative: str) -> Path:
         return media_path(self.settings.sources[source], relative, self.settings.escaped_paths)
 
-    def scan(self, trust_stable: bool = False, changes: set[tuple[str, str]] | None = None) -> dict:
+    def scan(self, trust_stable: bool = False, changes: set[tuple[str, str]] | None = None, interrupt: threading.Event | None = None) -> dict:
         with self.operation_lock:
             marker, now = str(uuid.uuid4()), time.time()
             counts = {"observed": 0, "modified": 0, "queued": 0, "deleted": 0, "scan_errors": 0}
@@ -88,10 +88,14 @@ class Indexer:
                 entries = os.walk(root, onerror=onerror, followlinks=False) if targets is None else (
                     (self.path(source, relative).parent, [], [self.path(source, relative).name]) for relative in targets)
                 for directory, subdirs, filenames in entries:
+                    if interrupt and interrupt.is_set():
+                        return {**counts, "interrupted": True}
                     subdirs[:] = [d for d in subdirs if not Path(directory, d).is_symlink() and
                                   registered_roots.get(Path(directory, d).resolve(), source) == source and
                                   visit_directory(scope, source, original_relative(root, Path(directory, d), self.settings.escaped_paths))]
                     for name in filenames:
+                        if interrupt and interrupt.is_set():
+                            return {**counts, "interrupted": True}
                         if not supported(name):
                             continue
                         path = Path(directory, name)
@@ -139,6 +143,8 @@ class Indexer:
                             failures.append(f"{path}: {error}")
                             if ident is not None:
                                 self.db.execute("UPDATE files SET error=? WHERE id=?", (str(error)[:2000], ident))
+                if interrupt and interrupt.is_set():
+                    return {**counts, "interrupted": True}
                 if failures:
                     counts["scan_errors"] += len(failures)
                     for error in failures:
@@ -348,12 +354,12 @@ class Indexer:
             FROM versions v JOIN files f ON f.desired_version=v.id WHERE {condition}""", arguments)
         return {'directories': self.settings.index_scope, **stats}
 
-    def pending(self, source: str | None = None) -> list[dict]:
+    def pending(self, source: str | None = None, exclude: str = "", preferred: str = "") -> list[dict]:
         condition, arguments = self.scope_filter()
         return self.db.rows(f"""SELECT v.* FROM versions v JOIN files f ON f.desired_version=v.id
             WHERE (v.status IN ('pending','processing') OR (v.status='failed' AND v.retry_at<=?))
-            AND (? IS NULL OR f.source=?) AND {condition} ORDER BY v.created LIMIT 100""",
-            [time.time(), source, source, *arguments])
+            AND (? IS NULL OR f.source=?) AND v.id!=? AND {condition} ORDER BY (v.id=?) DESC,v.created LIMIT 100""",
+            [time.time(), source, source, exclude, *arguments, preferred])
 
     def cleanup(self):
         with self.operation_lock:
@@ -375,6 +381,13 @@ class BackgroundWorker:
         self.index_event = threading.Event()
         self.retry_event = threading.Event()
         self.retry_paths = set()
+        self.task_interrupt = threading.Event()
+        self.task_lock = threading.RLock()
+        self.current_version = ""
+        self.current_targets = None
+        saved_task = runtime.db.one("SELECT value FROM meta WHERE key='suspended_task'")
+        self.suspended_task = json.loads(saved_task['value']) if saved_task else None
+        self.resume_version = ""
         self.config_event = threading.Event()
         self.wake_event = threading.Event()
         self.thread: threading.Thread | None = None
@@ -384,6 +397,50 @@ class BackgroundWorker:
         self.manual_active = bool(saved and saved['value'] == 'true')
         from frameseek.engine.watcher import MediaWatcher
         self.watcher = MediaWatcher(runtime.settings, runtime.db, self.wake_event)
+
+    def pause_current(self):
+        with self.task_lock:
+            if self.suspended_task:
+                return
+            if self.activity not in {'scanning','checking_changes','reparsing'} and not self.activity.startswith('indexing:'):
+                raise ValueError('当前没有正在执行的任务。')
+            self.suspended_task = {'activity': self.activity, 'version': self.current_version,
+                                   'targets': sorted(self.current_targets) if self.current_targets is not None else None}
+            self.runtime.db.execute("INSERT OR REPLACE INTO meta VALUES('suspended_task',?)", (json.dumps(self.suspended_task),))
+            self.manual_active = False
+            self.runtime.db.execute("INSERT OR REPLACE INTO meta VALUES('manual_encoding','false')")
+            self.task_interrupt.set()
+            self.wake_event.set()
+            self.runtime.db.event("task_pause", "已暂停当前任务，保留已保存进度。")
+
+    def resume_current(self):
+        with self.task_lock:
+            task = self.suspended_task
+            if not task:
+                return
+            self.suspended_task = None
+            self.runtime.db.execute("DELETE FROM meta WHERE key='suspended_task'")
+            self.task_interrupt.clear()
+            if task['version']:
+                self.resume_version = task['version']
+                self.index_event.set()
+            elif task['targets'] is not None:
+                self.retry_paths.update(tuple(item) for item in task['targets'])
+            else:
+                self.scan_event.set()
+            self.wake_event.set()
+            self.runtime.db.event("task_resume", "继续之前暂停的任务。")
+
+    def perform_scan(self, indexer, activity, changes=None):
+        with self.task_lock:
+            self.activity = activity
+            self.current_version = ""
+            self.current_targets = changes
+            self.task_interrupt.clear()
+        result = indexer.scan(changes=changes, interrupt=self.task_interrupt)
+        if result.get('interrupted'):
+            self.activity = 'task_paused'
+        return result
 
     def start(self):
         self.thread = threading.Thread(target=self.run, daemon=True, name="bif-indexer")
@@ -427,41 +484,51 @@ class BackgroundWorker:
                 condition, args = sql_scope(folders(self.runtime.settings, self.runtime.db))
                 self.retry_paths.update((r['source'],r['relpath']) for r in self.runtime.db.rows(
                     f"SELECT f.source,f.relpath FROM files f WHERE f.status='observed' AND f.error IS NOT NULL AND {condition}", args))
-            enabled = self.runtime.settings.auto_update or self.manual_active or manual or bool(self.retry_paths)
+            automatic = self.runtime.settings.auto_update and not self.suspended_task
+            enabled = automatic or self.manual_active or manual or bool(self.retry_paths)
             if not enabled:
-                self.activity = "disabled"
+                self.activity = "task_paused" if self.suspended_task else "disabled"
                 self.wait(1)
                 continue
             try:
                 indexer = self.runtime.get_indexer()
-                changed, directory_changed = self.watcher.drain()
-                if manual or (self.runtime.settings.auto_update and (directory_changed or time.time() >= next_scan)):
+                changed, directory_changed = self.watcher.drain() if automatic else (set(), False)
+                if manual or (automatic and (directory_changed or time.time() >= next_scan)):
                     self.scan_event.clear()
-                    self.activity = "scanning"
-                    indexer.scan()
+                    self.perform_scan(indexer, "scanning")
                     next_scan = time.time() + self.runtime.settings.interval
-                elif self.runtime.settings.auto_update:
+                elif automatic:
                     condition, arguments = indexer.scope_filter()
                     stable = self.runtime.db.rows(f"SELECT f.source,f.relpath FROM files f WHERE desired_version IS NULL AND status='observed' AND error IS NULL AND stable_since<=? AND {condition} LIMIT 256",
                         [time.time()-self.runtime.settings.stable_seconds, *arguments])
                     changed.update((row['source'],row['relpath']) for row in stable)
                     if changed:
-                        self.activity = 'checking_changes'
-                        indexer.scan(changes=changed)
+                        self.perform_scan(indexer, 'checking_changes', changed)
                 if self.retry_paths:
                     targets = set(list(self.retry_paths)[:256])
                     self.retry_paths.difference_update(targets)
-                    self.activity = 'reparsing'
-                    indexer.scan(changes=targets)
+                    self.perform_scan(indexer, 'reparsing', targets)
                 self.wake_event.clear()
-                for job in indexer.pending() if (self.runtime.settings.auto_update or self.manual_active) else []:
+                automatic = self.runtime.settings.auto_update and not self.suspended_task
+                excluded = (self.suspended_task or {}).get('version', '')
+                jobs = indexer.pending(exclude=excluded, preferred=self.resume_version) if (automatic or self.manual_active) else []
+                jobs.sort(key=lambda job: job['id'] != self.resume_version)
+                for job in jobs:
                     paused = self.runtime.db.one("SELECT value FROM meta WHERE key='paused'")
                     if (self.stop_event.is_set() or (paused and paused['value'] == 'true')
-                            or self.scan_event.is_set() or self.retry_event.is_set() or self.config_event.is_set() or self.watcher.has_pending or (self.runtime.settings.auto_update and time.time() >= next_scan)):
+                            or self.scan_event.is_set() or self.retry_event.is_set() or self.config_event.is_set() or (automatic and self.watcher.has_pending) or (automatic and time.time() >= next_scan)):
                         break
-                    self.activity = f"indexing:{job['file_id']}"
+                    with self.task_lock:
+                        self.activity = f"indexing:{job['file_id']}"
+                        self.current_version = job['id']
+                        self.current_targets = None
+                        self.task_interrupt.clear()
                     try:
-                        indexer.process_version(job["id"], self.stop_event, yield_at=next_scan if self.runtime.settings.auto_update else float('inf'), yield_requested=self.wake_event)
+                        indexer.process_version(job["id"], self.stop_event, yield_at=next_scan if automatic else float('inf'), yield_requested=self.wake_event)
+                        if self.task_interrupt.is_set():
+                            self.manual_active = False
+                            self.runtime.db.execute("INSERT OR REPLACE INTO meta VALUES('manual_encoding','false')")
+                            break
                     except Exception as error:
                         self.error = str(error)
                 self.activity = "cleanup"
@@ -470,7 +537,7 @@ class BackgroundWorker:
                 self.error = None
                 condition, arguments = indexer.scope_filter()
                 unstable = self.runtime.db.one(f"SELECT COUNT(*) AS n FROM files f WHERE desired_version IS NULL AND status='observed' AND error IS NULL AND {condition}", arguments)
-                if self.manual_active and not indexer.pending():
+                if self.manual_active and not indexer.pending(exclude=(self.suspended_task or {}).get('version', '')):
                     self.manual_active = False
                     self.runtime.db.execute("INSERT OR REPLACE INTO meta VALUES('manual_encoding','false')")
             except Exception as error:
