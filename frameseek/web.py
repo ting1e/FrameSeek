@@ -397,6 +397,7 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
             SUM(CASE WHEN v.status='pending' THEN 1 ELSE 0 END) AS queued,
             SUM(CASE WHEN v.status='processing' THEN 1 ELSE 0 END) AS processing,
             SUM(CASE WHEN v.status='failed' OR (f.status='observed' AND f.error IS NOT NULL) THEN 1 ELSE 0 END) AS failed
+            ,SUM(CASE WHEN f.status='observed' AND f.error IS NOT NULL THEN 1 ELSE 0 END) AS parse_failed
             FROM files f LEFT JOIN versions v ON v.id=f.desired_version
             WHERE f.status!='deleted' AND {condition}""", arguments)
         current_task = None
@@ -409,9 +410,10 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
             FROM files f JOIN versions v ON v.id=f.desired_version WHERE f.status!='deleted' AND {condition}""", arguments)
         is_paused = bool(paused and paused['value']=='true')
         progress = runtime.progress.update(totals['completed'], totals['remaining'],
-            (condition, tuple(arguments), totals['version_count'], totals['generation']),
+            (condition, tuple(arguments)),
             active=bool(totals['remaining'] and (settings.auto_update or runtime.worker.manual_active or tasks['processing'])),
-            paused=is_paused, blocked=bool(tasks['failed'] or tasks['stabilizing']))
+            paused=is_paused, blocked=bool(not (tasks['queued'] or tasks['processing']) and (tasks['failed'] or tasks['stabilizing'])),
+            scanning=runtime.worker.activity in {'scanning','checking_changes','reparsing'})
         if current_task and current_task["source"] in settings.sources:
             current_task["root_directory"] = settings.sources[current_task["source"]].resolve().as_posix()
         last_scan = runtime.db.one("SELECT value FROM meta WHERE key='last_scan'")
@@ -581,8 +583,40 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
             raise HTTPException(409, '尚未设置监控目录，请先到设置页填写目录。')
         already_requested = runtime.worker.scan_event.is_set()
         runtime.worker.scan_event.set()
+        runtime.worker.wake_event.set()
         return {"queued": True, "already_requested": already_requested,
-                "message": '已有检查请求等待执行。' if already_requested else '检查请求已提交，将扫描监控目录并处理新增或修改的 BIF 和图片。'}
+                "message": '已有扫描请求等待执行。' if already_requested else '扫描请求已提交，只检查文件并建立任务；自动更新关闭时，请再点击“手动编码”。'}
+
+    @app.get('/api/updates/events')
+    def task_events(request: Request, offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100), snapshot: int | None = Query(None, ge=0)):
+        auth.require(request)
+        with runtime.db.connect() as c:
+            maximum = c.execute('SELECT COALESCE(MAX(id),0) FROM events').fetchone()[0]
+            snapshot = maximum if snapshot is None else min(snapshot, maximum)
+            total = c.execute('SELECT COUNT(*) FROM events WHERE id<=?', (snapshot,)).fetchone()[0]
+            items = [dict(row) for row in c.execute('SELECT * FROM events WHERE id<=? ORDER BY id DESC LIMIT ? OFFSET ?', (snapshot, limit, offset))]
+        return {'items':items,'total':total,'snapshot':snapshot,'has_more':offset+len(items)<total}
+
+    @app.delete('/api/updates/events')
+    def clear_task_events(request: Request, through_id: int = Query(..., ge=0)):
+        auth.require(request, mutation=True)
+        with runtime.db.connect() as c:
+            removed = c.execute('DELETE FROM events WHERE id<=?', (through_id,)).rowcount
+        return {'removed':removed}
+
+    @app.post('/api/updates/index')
+    @app.post('/api/updates/reparse')
+    def manual_task(request: Request):
+        auth.require(request, mutation=True)
+        paused = runtime.db.one("SELECT value FROM meta WHERE key='paused'")
+        if paused and paused['value']=='true':
+            raise HTTPException(409,'后台任务已暂停，请先恢复。')
+        if not folders(settings,runtime.db):
+            raise HTTPException(409,'尚未设置监控目录。')
+        reparse = request.url.path.endswith('/reparse')
+        (runtime.worker.retry_event if reparse else runtime.worker.index_event).set()
+        runtime.worker.wake_event.set()
+        return {'queued':True,'message':'已请求重新解析失败文件；解析成功后加入待编码队列。' if reparse else '已请求编码当前待处理任务，不进行全目录扫描。'}
 
     @app.post("/api/updates/{action}")
     def pause(request: Request, action: str):
@@ -591,7 +625,8 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
             raise HTTPException(404, "Unknown action")
         runtime.db.execute("INSERT OR REPLACE INTO meta VALUES('paused',?)", ("true" if action == "pause" else "false",))
         if action == 'resume' and not settings.auto_update and folders(settings, runtime.db):
-            runtime.worker.scan_event.set()
+            runtime.worker.index_event.set()
+        runtime.worker.wake_event.set()
         return {"paused": action == "pause", "message": '暂停请求已提交，当前处理分块完成后暂停；已完成的画面仍可搜索。' if action == 'pause' else ('已解除暂停，后台将继续检查和处理监控目录。' if folders(settings, runtime.db) else '已解除暂停。尚未设置监控目录，请到设置页填写。')}
 
     return app

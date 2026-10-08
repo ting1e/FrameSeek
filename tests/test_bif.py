@@ -6,7 +6,7 @@ import pytest
 
 from frameseek.media.bif import BifError, parse, read_frame
 from frameseek.core.paths import canonical_mtime, media_path, escaped_part, original_relative
-from conftest import write_bif
+from conftest import write_bif, jpeg
 
 
 def test_cross_platform_timestamp_precision():
@@ -59,3 +59,17 @@ def test_symlink_escape(tmp_path):
     try: link.symlink_to(outside, target_is_directory=True)
     except OSError: pytest.skip('Symlink privilege unavailable')
     with pytest.raises(ValueError): media_path(root, 'link/image.bif')
+
+
+def test_compact_bif_preserves_milliseconds_and_short_header(tmp_path):
+    from frameseek.media.bif import MAGIC
+    images = [jpeg('red'), jpeg('blue')]
+    first = 16 + len(images)*8
+    data = MAGIC + struct.pack('<II',0,2) + struct.pack('<IIII',0,first,10000,first+len(images[0])) + b''.join(images)
+    path=tmp_path/'compact.bif';path.write_bytes(data)
+    frames=parse(path)
+    assert [frame.time_ms for frame in frames]==[0,10000]
+    assert frames[0].offset==32 and frames[-1].offset+frames[-1].length==len(data)
+    assert read_frame(path,frames[0].offset,frames[0].length)==images[0]
+    damaged=bytearray(data);struct.pack_into('<I',damaged,28,len(data)+100);path.write_bytes(damaged)
+    with pytest.raises(BifError):parse(path)

@@ -85,8 +85,7 @@ class Database:
     def event(self, kind: str, message: str, file_id: str | None = None):
         with self.connect() as c:
             c.execute("INSERT INTO events(time,kind,file_id,message) VALUES(?,?,?,?)",
-                      (time.time(), kind, file_id, message[:2000]))
-            c.execute("DELETE FROM events WHERE id < (SELECT COALESCE(MAX(id),0)-2000 FROM events)")
+                      (time.time(), kind, file_id, message))
 
     def bind_model(self, manifest: dict):
         fingerprint = manifest["fingerprint"]

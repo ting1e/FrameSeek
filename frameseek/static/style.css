@@ -73,3 +73,5 @@
 .result-actions .result-nearby:hover{border-color:color-mix(in srgb,var(--color-primary) 45%,var(--color-base-300));background:var(--color-base-200)}
 .result-actions .emby-play-button{flex-grow:1.4}
 .result-actions .result-action:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}
+
+.events .event-message{white-space:pre-wrap;overflow-wrap:anywhere;overflow:visible;text-overflow:clip}.events li{align-items:flex-start}

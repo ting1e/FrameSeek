@@ -12,7 +12,7 @@ class ProcessingProgress:
         self.key = None
         self.lock = threading.Lock()
 
-    def update(self, completed, remaining, key, active=True, paused=False, blocked=False, now=None):
+    def update(self, completed, remaining, key, active=True, paused=False, blocked=False, now=None, scanning=False):
         now = time.monotonic() if now is None else now
         with self.lock:
             if key != self.key or not active or paused or (self.samples and completed < self.samples[-1][1]):
@@ -39,12 +39,14 @@ class ProcessingProgress:
                         intervals.append((sample[1]-previous[1])/(sample[0]-previous[0]))
                         previous = sample
                 stale = now - previous[0] > 30
+                if stale:
+                    speed = None
                 if speed and elapsed >= 30 and len(intervals) >= 2 and not stale:
                     mean = statistics.mean(intervals)
                     stable = mean > 0 and statistics.pstdev(intervals) / mean <= .35
-            eta = math.ceil(remaining / speed) if stable and remaining > 0 and not blocked else None
+            eta = math.ceil(remaining / speed) if stable and remaining > 0 and not blocked and not scanning else None
             state = ('paused' if paused else 'idle' if not active or not remaining else
-                     'blocked' if blocked else 'stable' if stable else 'warming_up')
+                     'scanning' if scanning else 'blocked' if blocked else 'stable' if stable else 'warming_up')
             return {'completed_frames':completed, 'remaining_frames':remaining,
                     'frames_per_second':round(speed, 2) if speed else None,
                     'eta_seconds':eta, 'state':state, 'stable':stable}

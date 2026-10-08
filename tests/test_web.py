@@ -59,7 +59,7 @@ def test_task_buttons_pause_scan_and_manual_resume(runtime, client):
     assert client.post('/api/updates/scan', headers=headers).status_code == 409
     runtime.worker.scan_event.clear()
     assert client.post('/api/updates/resume', headers=headers).json()['paused'] is False
-    assert runtime.worker.scan_event.is_set()  # Manual mode actually schedules work on resume.
+    assert runtime.worker.index_event.is_set()  # Resume encodes the queue without another full scan.
     runtime.settings.monitor_folders = []
     assert client.post('/api/updates/scan', headers=headers).status_code == 409
 
@@ -72,7 +72,7 @@ def test_task_summary_matches_monitored_scope(runtime, client):
     runtime.settings.monitor_folders = [{'source':'sda','path':'watched'}]
     headers = login(client)
     status = client.get('/api/status').json()
-    assert status['tasks'] == {'stabilizing':0,'queued':1,'processing':0,'failed':0}
+    assert status['tasks'] == {'stabilizing':0,'queued':1,'processing':0,'failed':0,'parse_failed':0}
     assert status['pending'] == 1
     assert status['monitor_directories'] == [(runtime.settings.sources['sda'] / 'watched').resolve().as_posix()]
     assert status['last_scan'] is not None and status['current_task'] is None

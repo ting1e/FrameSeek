@@ -141,7 +141,7 @@ class Indexer:
                                 self.db.execute("UPDATE files SET error=? WHERE id=?", (str(error)[:2000], ident))
                 if failures:
                     counts["scan_errors"] += len(failures)
-                    for error in failures[:20]:
+                    for error in failures:
                         self.db.event("scan_error", error)
                 else:
                     if targets is None:
@@ -308,7 +308,9 @@ class Indexer:
                     c.execute("INSERT OR IGNORE INTO deletions VALUES(?,?)", (current["active_version"], time.time()))
                 c.execute("UPDATE versions SET status='ready',attempts=0,error=NULL WHERE id=?", (version,))
                 c.execute("UPDATE files SET active_version=?,status='ready',error=NULL WHERE id=?", (version, row["file_id"]))
-            self.db.event("indexed", f"{row['source']}/{row['relpath']}：embedding 已更新，{row['total']} 帧（损坏帧跳过）", row["file_id"])
+            skipped = self.db.one('SELECT COUNT(*) AS n FROM frames WHERE version=? AND valid=0', (version,))['n']
+            suffix = f'，跳过 {skipped} 个损坏帧' if skipped else ''
+            self.db.event("indexed", f"{row['source']}/{row['relpath']}：embedding 已更新，{row['total']} 帧{suffix}", row["file_id"])
             return processed
         except Exception as error:
             attempts = row["attempts"] + 1
@@ -370,12 +372,16 @@ class BackgroundWorker:
         self.runtime = runtime
         self.stop_event = threading.Event()
         self.scan_event = threading.Event()
+        self.index_event = threading.Event()
+        self.retry_event = threading.Event()
+        self.retry_paths = set()
         self.config_event = threading.Event()
         self.wake_event = threading.Event()
         self.thread: threading.Thread | None = None
         self.activity = "idle"
         self.error: str | None = None
-        self.manual_active = False
+        saved = runtime.db.one("SELECT value FROM meta WHERE key='manual_encoding'")
+        self.manual_active = bool(saved and saved['value'] == 'true')
         from frameseek.engine.watcher import MediaWatcher
         self.watcher = MediaWatcher(runtime.settings, runtime.db, self.wake_event)
 
@@ -412,9 +418,16 @@ class BackgroundWorker:
                 self.wait(1)
                 continue
             manual = self.scan_event.is_set()
-            if manual:
+            if self.index_event.is_set():
+                self.index_event.clear()
                 self.manual_active = True
-            enabled = self.runtime.settings.auto_update or self.manual_active
+                self.runtime.db.execute("INSERT OR REPLACE INTO meta VALUES('manual_encoding','true')")
+            if self.retry_event.is_set():
+                self.retry_event.clear()
+                condition, args = sql_scope(folders(self.runtime.settings, self.runtime.db))
+                self.retry_paths.update((r['source'],r['relpath']) for r in self.runtime.db.rows(
+                    f"SELECT f.source,f.relpath FROM files f WHERE f.status='observed' AND f.error IS NOT NULL AND {condition}", args))
+            enabled = self.runtime.settings.auto_update or self.manual_active or manual or bool(self.retry_paths)
             if not enabled:
                 self.activity = "disabled"
                 self.wait(1)
@@ -422,12 +435,12 @@ class BackgroundWorker:
             try:
                 indexer = self.runtime.get_indexer()
                 changed, directory_changed = self.watcher.drain()
-                if manual or directory_changed or time.time() >= next_scan:
+                if manual or (self.runtime.settings.auto_update and (directory_changed or time.time() >= next_scan)):
                     self.scan_event.clear()
                     self.activity = "scanning"
                     indexer.scan()
                     next_scan = time.time() + self.runtime.settings.interval
-                else:
+                elif self.runtime.settings.auto_update:
                     condition, arguments = indexer.scope_filter()
                     stable = self.runtime.db.rows(f"SELECT f.source,f.relpath FROM files f WHERE desired_version IS NULL AND status='observed' AND error IS NULL AND stable_since<=? AND {condition} LIMIT 256",
                         [time.time()-self.runtime.settings.stable_seconds, *arguments])
@@ -435,15 +448,20 @@ class BackgroundWorker:
                     if changed:
                         self.activity = 'checking_changes'
                         indexer.scan(changes=changed)
+                if self.retry_paths:
+                    targets = set(list(self.retry_paths)[:256])
+                    self.retry_paths.difference_update(targets)
+                    self.activity = 'reparsing'
+                    indexer.scan(changes=targets)
                 self.wake_event.clear()
-                for job in indexer.pending():
+                for job in indexer.pending() if (self.runtime.settings.auto_update or self.manual_active) else []:
                     paused = self.runtime.db.one("SELECT value FROM meta WHERE key='paused'")
                     if (self.stop_event.is_set() or (paused and paused['value'] == 'true')
-                            or self.scan_event.is_set() or self.config_event.is_set() or self.watcher.has_pending or time.time() >= next_scan):
+                            or self.scan_event.is_set() or self.retry_event.is_set() or self.config_event.is_set() or self.watcher.has_pending or (self.runtime.settings.auto_update and time.time() >= next_scan)):
                         break
                     self.activity = f"indexing:{job['file_id']}"
                     try:
-                        indexer.process_version(job["id"], self.stop_event, yield_at=next_scan, yield_requested=self.wake_event)
+                        indexer.process_version(job["id"], self.stop_event, yield_at=next_scan if self.runtime.settings.auto_update else float('inf'), yield_requested=self.wake_event)
                     except Exception as error:
                         self.error = str(error)
                 self.activity = "cleanup"
@@ -452,8 +470,9 @@ class BackgroundWorker:
                 self.error = None
                 condition, arguments = indexer.scope_filter()
                 unstable = self.runtime.db.one(f"SELECT COUNT(*) AS n FROM files f WHERE desired_version IS NULL AND status='observed' AND error IS NULL AND {condition}", arguments)
-                if self.manual_active and not indexer.scope_stats()['pending_files'] and not unstable['n']:
+                if self.manual_active and not indexer.pending():
                     self.manual_active = False
+                    self.runtime.db.execute("INSERT OR REPLACE INTO meta VALUES('manual_encoding','false')")
             except Exception as error:
                 self.error = str(error)
                 self.activity = "error"

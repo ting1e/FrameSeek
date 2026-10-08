@@ -84,7 +84,8 @@ async function check(outcome) {
   assert.equal(element('search-section').hidden, true);
   assert.equal(element('session-loading').hidden, false);
   const status = {
-    frames: 0, ready_files: 0, pending: 0, sources: [], activity: 'disabled', events: [], model_ready: true
+    frames: 0, ready_files: 0, pending: 0, sources: [], activity: 'disabled', events: [], model_ready: true,
+    items: [], total: 0, snapshot: 0, has_more: false
   };
   if (outcome === 'network') reject(new Error('offline'));
   else resolve({status: outcome, ok: outcome === 200, json: async () => status});

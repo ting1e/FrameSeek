@@ -37,21 +37,30 @@ async function refreshStatus() {
   $("frame-count").textContent = status.frames.toLocaleString();
   $("task-frames").textContent = status.frames.toLocaleString();
   const tasks = status.tasks || {queued:status.pending,processing:0,failed:0,stabilizing:0};
-  $("pending-count").textContent = `等待稳定 ${tasks.stabilizing} · 待处理 ${tasks.queued} · 处理中 ${tasks.processing} · 失败待重试 ${tasks.failed}`;
+  $("pending-count").textContent = `等待稳定 ${tasks.stabilizing} · 待编码 ${tasks.queued} · 编码中 ${tasks.processing} · 解析失败 ${tasks.parse_failed || 0} · 编码失败 ${tasks.failed - (tasks.parse_failed || 0)}`;
   paused = status.paused; $("pause").textContent = paused ? "恢复更新" : "暂停更新";
   const directories = status.monitor_directories || [];
-  const labels = {idle:tasks.stabilizing ? "等待文件稳定" : (status.manual_active ? "本次更新仍在进行" : (status.realtime_monitoring ? "正在监听文件变动" : "等待下一次检查")),paused:"更新已暂停",disabled:"手动更新模式",scanning:"正在扫描监控目录",checking_changes:"正在检查变动文件",cleanup:"正在清理旧版本向量",error:"更新遇到错误"};
+  const labels = {idle:tasks.stabilizing ? "等待文件稳定" : (status.manual_active ? "本次更新仍在进行" : (status.realtime_monitoring ? "正在监听文件变动" : "等待下一次检查")),paused:"更新已暂停",disabled:"手动更新模式",scanning:"正在扫描监控目录",checking_changes:"正在检查变动文件",reparsing:"正在重新解析失败文件",cleanup:"正在清理旧版本向量",error:"更新遇到错误"};
   $("task-label").textContent = paused ? (status.activity === "paused" ? "更新已暂停" : "正在等待当前分块结束后暂停") : (!directories.length ? "未设置监控目录" : (status.scan_requested ? "检查请求等待执行" : (status.activity.startsWith("indexing:") ? "正在提取画面特征" : (labels[status.activity] || "正在读取任务状态"))));
   $("task-updated").textContent = `状态更新于 ${new Date().toLocaleTimeString("zh-CN", {hour:"2-digit",minute:"2-digit",second:"2-digit"})}`;
-  $("task-hint").textContent = paused ? "暂停后保留处理进度。点击“恢复更新”继续；已完成的画面仍可搜索。" : (!directories.length ? "到设置页填写监控目录后，再检查文件变动。" : (status.manual_active && !status.auto_update ? "正在执行一次手动更新；全部任务完成后回到手动模式。编码失败会按退避时间重试；扫描异常需修复后再次检查。" : (!status.auto_update ? "点击“检查文件变动”执行一次扫描和更新。只处理新增或修改的 BIF 和图片，文件稳定后再提取特征。" : "系统实时监听文件变动，并定期扫描补查。文件稳定后更新特征，已删除文件会清理索引。")));
+  $("task-hint").textContent = paused ? "暂停后保留处理进度。点击“恢复更新”继续；已完成的画面仍可搜索。" : (!directories.length ? "到设置页填写监控目录后，再检查文件变动。" : (status.manual_active && !status.auto_update ? "正在执行一次手动更新；全部任务完成后回到手动模式。编码失败会按退避时间重试；扫描异常需修复后再次检查。" : (!status.auto_update ? "先点击“手动扫描”发现文件，再点击“手动编码”处理队列。解析失败的文件可单独重新解析。" : "系统实时监听文件变动，并定期扫描补查。手动扫描只检查文件，手动编码处理已建立的任务；重新解析用于再次尝试解析失败文件。")));
   renderTaskProgress(status.progress);
   const current = status.current_task;
   $("task-progress").hidden = !current;
   if (current) $("task-progress").textContent = `${current.root_directory || directoryRoot(current.source)}/${current.relpath}\n已保存 ${current.cursor.toLocaleString()} / ${current.total.toLocaleString()} 帧。完整文件处理完后才可搜索。`;
+  for (const id of ["encode","reparse"]) $(id).disabled = taskActionBusy || paused || !directories.length;
   $("scan").disabled = taskActionBusy || paused || !directories.length || status.scan_requested || status.activity === "scanning";
   $("pause").disabled = taskActionBusy;
-  $("task-error").textContent = !status.model_ready ? "模型尚未准备好，请先完成模型下载。" : (status.worker_error || (status.watcher_error ? "实时监听未启动，当前使用定时扫描。" : "") || (tasks.failed ? `${tasks.failed} 个任务失败待重试，可查看下方记录定位原因。` : ""));
-  $("events").replaceChildren(...status.events.map(event => {
+  $("task-error").textContent = !status.model_ready ? "模型尚未准备好，请先完成模型下载。" : (status.worker_error || (status.watcher_error ? "实时监听未启动，当前使用定时扫描。" : "") || (tasks.failed ? `${tasks.parse_failed || 0} 个文件解析失败，${tasks.failed - (tasks.parse_failed || 0)} 个编码任务失败；其他任务可继续处理。` : ""));
+  await refreshTaskEvents();
+}
+let eventsOffset = 0, eventsSnapshot = null, eventsMaximum = 0;
+async function refreshTaskEvents() {
+  const data = await api(`/api/updates/events?offset=${eventsOffset}&limit=50${eventsOffset && eventsSnapshot !== null ? `&snapshot=${eventsSnapshot}` : ""}`);
+  eventsSnapshot = data.snapshot; eventsMaximum = Math.max(eventsMaximum, data.snapshot);
+  $("events-prev").disabled = eventsOffset === 0; $("events-next").disabled = !data.has_more;
+  $("events-page").textContent = `共 ${data.total.toLocaleString()} 条 · 第 ${Math.floor(eventsOffset / 50) + 1} 页`;
+  $("events").replaceChildren(...data.items.map(event => {
     const item = node("li", "");
     item.title = `${new Date(event.time * 1000).toLocaleString()} · ${taskEventLabel(event.kind)} · ${taskEventMessage(event)}`;
     item.append(node("span", "event-time", new Date(event.time * 1000).toLocaleString()), node("strong", "event-kind", taskEventLabel(event.kind)), node("span", "event-message", taskEventMessage(event)));
@@ -218,7 +227,7 @@ function renderTaskProgress(progress) {
   $("processed-frames").textContent = progress.completed_frames.toLocaleString();
   $("remaining-frames").textContent = progress.remaining_frames.toLocaleString();
   $("processing-speed").textContent = progress.frames_per_second == null ? "—" : `${progress.frames_per_second.toFixed(2)} 帧/秒`;
-  const labels = {paused:"已暂停",idle:progress.remaining_frames ? "等待开始处理" : "暂无待处理帧",blocked:"等待文件稳定或失败任务恢复",warming_up:"等待速度稳定"};
+  const labels = {paused:"已暂停",idle:progress.remaining_frames ? "等待开始处理" : "暂无待处理帧",blocked:"暂无可编码任务",scanning:"目录检查中，编码暂时让出资源",warming_up:"等待速度稳定"};
   $("processing-eta").textContent = progress.eta_seconds == null ? (labels[progress.state] || "等待速度稳定") : remainingLabel(progress.eta_seconds);
 }
 function displayResults(data) {
@@ -263,6 +272,18 @@ async function runTaskAction(action) {
   }
 }
 $("scan").addEventListener("click", () => runTaskAction("scan"));
+$("encode").addEventListener("click", () => runTaskAction("index"));
+$("reparse").addEventListener("click", () => runTaskAction("reparse"));
+$("events-prev").addEventListener("click", () => { eventsOffset = Math.max(0,eventsOffset-50); refreshTaskEvents().catch(error => $("task-notice").textContent=error.message); });
+$("events-next").addEventListener("click", () => { eventsOffset += 50; refreshTaskEvents().catch(error => $("task-notice").textContent=error.message); });
+$("clear-events").addEventListener("click", () => { $("events-clear-error").textContent=""; $("events-clear-dialog").showModal(); });
+$("events-clear-cancel").addEventListener("click", () => $("events-clear-dialog").close());
+$("events-clear-confirm").addEventListener("click", async event => {
+  const button=event.currentTarget; button.disabled=true;
+  try { await api(`/api/updates/events?through_id=${eventsMaximum}`,{method:"DELETE"}); eventsOffset=0; eventsSnapshot=null; eventsMaximum=0; $("events-clear-dialog").close(); await refreshTaskEvents(); }
+  catch(error) { $("events-clear-error").textContent=error.message; }
+  finally { button.disabled=false; }
+});
 $("pause").addEventListener("click", () => runTaskAction(paused ? "resume" : "pause"));
 $("refresh-tasks").addEventListener("click", async event => {
   const button = event.currentTarget; button.disabled = true;

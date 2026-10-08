@@ -22,21 +22,42 @@ class Frame:
 
 
 def parse_stream(stream: BinaryIO, size: int) -> list[Frame]:
-    header = stream.read(64)
-    if len(header) != 64 or header[:8] != MAGIC:
+    header = stream.read(16)
+    if len(header) != 16 or header[:8] != MAGIC:
         raise BifError("Invalid or truncated BIF header")
-    version, count, multiplier = struct.unpack_from("<III", header, 8)
+    version, count = struct.unpack_from("<II", header, 8)
     if version != 0:
         raise BifError(f"Unsupported BIF version {version}")
-    table_end = 64 + (count + 1) * 8
-    if count > MAX_FRAMES or table_end > size:
+    if count > MAX_FRAMES:
         raise BifError("Invalid frame count/index boundary")
+    probe = stream.read(8)
+    # Compact BIF: 16-byte header, millisecond timestamps, no sentinel.
+    compact = count > 0 and len(probe) == 8 and struct.unpack('<II', probe) == (0, 16 + count * 8)
+    table_start = 16 if compact else 64
+    table_end = table_start + (count if compact else count + 1) * 8
+    if table_end > size:
+        raise BifError("Invalid frame count/index boundary")
+    multiplier = 1 if compact else (struct.unpack('<I', probe[:4])[0] if len(probe) == 8 else 1000)
+    stream.seek(table_start)
+    if compact:
+        table = stream.read(count * 8)
+        entries = list(struct.iter_unpack('<II', table)) + [(0xFFFFFFFF, size)]
+    else:
+        entries = _standard_entries(stream, count, size)
+    return _frames(entries, table_end, size, multiplier)
+
+
+def _standard_entries(stream, count, size):
     table = stream.read((count + 1) * 8)
     if len(table) != (count + 1) * 8:
         raise BifError("Truncated BIF index")
     entries = list(struct.iter_unpack("<II", table))
     if entries[-1][0] != 0xFFFFFFFF or entries[-1][1] > size:
         raise BifError("Invalid end-of-data sentinel")
+    return entries
+
+
+def _frames(entries, table_end, size, multiplier):
     result: list[Frame] = []
     previous_time = -1
     for index, (timestamp, offset) in enumerate(entries[:-1]):
@@ -56,7 +77,7 @@ def parse(path: Path) -> list[Frame]:
 
 
 def read_frame(path: Path, offset: int, length: int) -> bytes:
-    if offset < 64 or length <= 0 or length > 64 * 1024 * 1024:
+    if offset < 16 or length <= 0 or length > 64 * 1024 * 1024:
         raise BifError("Invalid JPEG span")
     with path.open("rb") as stream:
         stream.seek(offset)
