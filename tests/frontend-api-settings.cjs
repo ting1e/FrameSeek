@@ -40,5 +40,7 @@ vm.runInContext(fs.readFileSync('frameseek/static/api-settings.js','utf8'),conte
   for(const id of elements.keys())assert.ok(html.includes(`id="${id}"`),`Missing ${id}`);
   assert.ok(!html.includes('id="library-files"'));
   assert.ok(html.includes('table table-zebra library-table'));
+  const css=fs.readFileSync('frameseek/static/daisyui.css','utf8');
+  for(const selector of ['.table-zebra','.breadcrumbs','.badge-success'])assert.ok(css.includes(selector),`Missing compiled DaisyUI style ${selector}`);
   console.log('API settings, token generation/copy, toggle, cache dialog and directory table wiring passed.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
