@@ -61,6 +61,9 @@ class Database:
             connection.executescript(SCHEMA)
             if 'media_type' not in {row['name'] for row in connection.execute('PRAGMA table_info(files)')}:
                 connection.execute("ALTER TABLE files ADD COLUMN media_type TEXT NOT NULL DEFAULT 'bif'")
+            if 'byte_size' not in {row['name'] for row in connection.execute('PRAGMA table_info(chunks)')}:
+                connection.execute('ALTER TABLE chunks ADD COLUMN byte_size INTEGER')
+            connection.execute('CREATE INDEX IF NOT EXISTS chunks_unknown_size ON chunks(version,start) WHERE byte_size IS NULL')
             connection.execute("INSERT OR IGNORE INTO meta VALUES('schema_version','1')")
             if connection.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] != "1":
                 raise RuntimeError("Unsupported database schema")

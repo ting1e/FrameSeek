@@ -45,6 +45,7 @@ class Runtime:
         self.store = store
         self.indexer = None
         self.init_lock = threading.RLock()
+        self.library_lock = threading.Lock()
         self.query_slots = threading.BoundedSemaphore(4)
         self.progress = ProcessingProgress()
         self.worker = BackgroundWorker(self)

@@ -297,8 +297,8 @@ class Indexer:
                 checksum = digest(destination)
                 with self.db.connect() as c:
                     c.executemany("UPDATE frames SET valid=0,error=? WHERE id=?", bad)
-                    c.execute("INSERT OR REPLACE INTO chunks(version,start,end,path,sha256,uploaded) VALUES(?,?,?,?,?,0)",
-                              (version, cursor, cursor + count, relative, checksum))
+                    c.execute("INSERT OR REPLACE INTO chunks(version,start,end,path,sha256,uploaded,byte_size) VALUES(?,?,?,?,?,0,?)",
+                              (version, cursor, cursor + count, relative, checksum, destination.stat().st_size))
                     c.execute("UPDATE versions SET cursor=? WHERE id=?", (cursor + count, version))
                 self.flush_chunk(self.db.one("SELECT * FROM chunks WHERE version=? AND start=?", (version, cursor)))
                 cursor += count
@@ -445,6 +445,9 @@ class BackgroundWorker:
     def start(self):
         self.thread = threading.Thread(target=self.run, daemon=True, name="bif-indexer")
         self.thread.start()
+        from frameseek.engine.library import backfill_sizes
+        self.size_thread = threading.Thread(target=backfill_sizes, args=(self.runtime,), daemon=True, name='vector-sizes')
+        self.size_thread.start()
 
     def stop(self):
         self.stop_event.set()
@@ -453,6 +456,8 @@ class BackgroundWorker:
         if self.thread:
             self.thread.join(timeout=120)
         self.watcher.stop()
+        if getattr(self, 'size_thread', None):
+            self.size_thread.join(timeout=3)
 
     def configuration_changed(self):
         self.task_interrupt.set()

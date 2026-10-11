@@ -133,8 +133,8 @@ def import_file(runtime, export: Path, result: dict) -> dict:
                     raise ValueError('Export changed during copy')
                 os.replace(temp, dest)
                 with db.connect() as c:
-                    c.execute('INSERT INTO chunks(version,start,end,path,sha256,uploaded) VALUES(?,?,?,?,?,0)',
-                              (version, block['start'], block['end'], dest.relative_to(runtime.settings.data).as_posix(), block['sha256']))
+                    c.execute('INSERT INTO chunks(version,start,end,path,sha256,uploaded,byte_size) VALUES(?,?,?,?,?,0,?)',
+                              (version, block['start'], block['end'], dest.relative_to(runtime.settings.data).as_posix(), block['sha256'], dest.stat().st_size))
                     c.execute('UPDATE versions SET cursor=? WHERE id=?', (block['end'], version))
                 indexer.flush_chunk(db.one('SELECT * FROM chunks WHERE version=? AND start=?', (version, block['start'])))
             indexer.verify_stamp(path, dict(size=stamp.st_size, mtime_ns=canonical_mtime(stamp)))

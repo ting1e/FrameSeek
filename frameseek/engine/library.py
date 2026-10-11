@@ -17,6 +17,11 @@ def boundary(relative, directory):
 
 def inventory(runtime, source='', directory='', keyword='', offset=0):
     source, directory = validate_scope(runtime.settings.sources, source, directory)
+    with runtime.library_lock:
+        return _inventory(runtime, source, directory, keyword, offset)
+
+
+def _inventory(runtime, source, directory, keyword, offset):
     db = runtime.db
     condition, arguments = '1', []
     if source:
@@ -25,55 +30,89 @@ def inventory(runtime, source='', directory='', keyword='', offset=0):
     if directory:
         condition += ' AND substr(f.relpath,1,?)=?'
         arguments.extend([len(directory)+1,directory+'/'])
-    rows = db.rows("""SELECT f.id,f.source,f.relpath,f.media_type,
+    query = """SELECT f.id,f.source,f.relpath,f.media_type,
         COALESCE((SELECT status FROM versions WHERE id=f.desired_version),f.status) AS status,
         COUNT(v.id) AS versions,
         COALESCE(SUM(CASE WHEN v.id=f.active_version AND v.status='ready' THEN
           v.total-(SELECT COUNT(*) FROM frames fr WHERE fr.version=v.id AND fr.valid=0) ELSE 0 END),0) AS vectors,
-        MAX(v.created) AS updated
-        FROM files f JOIN versions v ON v.file_id=f.id WHERE """ + condition + ' GROUP BY f.id', arguments
-    )
-    rows = [r for r in rows if (not source or r['source'] == source) and boundary(r['relpath'], directory)]
-    chunks = db.rows('SELECT v.file_id,c.path FROM chunks c JOIN versions v ON v.id=c.version JOIN files f ON f.id=v.file_id WHERE ' + condition, arguments)
-    selected = {r['id']: r for r in rows}
-    for r in rows:
-        r['bytes'] = 0
-    for chunk in chunks:
-        row = selected.get(chunk['file_id'])
-        if row:
-            path = (runtime.settings.data / chunk['path']).resolve()
-            if path.is_relative_to((runtime.settings.data / 'vectors').resolve()):
-                try:
-                    row['bytes'] += path.stat().st_size
-                except FileNotFoundError:
-                    pass
-    groups = {}
-    for row in rows:
-        parent = PurePosixPath(row['relpath']).parent
-        # Include every ancestor, including roots, regardless of current monitoring scope.
-        for path in [parent, *parent.parents]:
-            name = '' if str(path) == '.' else str(path)
-            if directory and name != directory and not name.startswith(directory + '/'):
-                continue
-            key = (row['source'], name)
-            group = groups.setdefault(key, {'source':key[0], 'directory':name, 'files':0,
-                                           'bif':0, 'images':0, 'vectors':0, 'bytes':0})
-            group['files'] += 1
-            group['images' if row['media_type'] == 'image' else 'bif'] += 1
-            group['vectors'] += row['vectors']
-            group['bytes'] += row['bytes']
+        MAX(v.created) AS updated,
+        COALESCE(MAX(sz.bytes),0) AS bytes,COALESCE(MAX(sz.unknown),0) AS size_pending
+        FROM files f JOIN versions v ON v.file_id=f.id
+        LEFT JOIN (SELECT v.file_id,SUM(c.byte_size) AS bytes,COUNT(*)-COUNT(c.byte_size) AS unknown
+                   FROM chunks c JOIN versions v ON v.id=c.version GROUP BY v.file_id) sz ON sz.file_id=f.id
+        WHERE """ + condition + ' GROUP BY f.id' + (' ORDER BY f.relpath' if source else '')
+    groups, files, total = {}, [], 0
+    # Stream SQLite rows and retain only one file page; large libraries must not
+    # allocate several full copies of every file and chunk per request.
+    with db.connect() as connection:
+        for record in connection.execute(query, arguments):
+            row = dict(record)
+            if source and offset <= total < offset+50:
+                files.append(row)
+            total += 1
+            if not keyword:
+                names = [directory]
+                if source:
+                    suffix = row['relpath'][len(directory)+1:] if directory else row['relpath']
+                    if '/' in suffix:
+                        names.append((directory+'/' if directory else '') + suffix.split('/',1)[0])
+            else:
+                parts = row['relpath'].split('/')[:-1]
+                names = ['/'.join(parts[:end]) for end in range(len(parts)+1)]
+            for name in names:
+                if directory and name != directory and not name.startswith(directory + '/'):
+                    continue
+                key = (row['source'], name)
+                group = groups.setdefault(key, {'source':key[0], 'directory':name, 'files':0,
+                                               'bif':0, 'images':0, 'vectors':0, 'bytes':0, 'size_pending':False})
+                group['files'] += 1
+                group['images' if row['media_type'] == 'image' else 'bif'] += 1
+                group['vectors'] += row['vectors']
+                group['bytes'] += row['bytes']
+                group['size_pending'] |= bool(row['size_pending'])
+    roots = {source:root.resolve().as_posix().rstrip('/') for source,root in runtime.settings.sources.items()}
     for group in groups.values():
-        root = runtime.settings.sources.get(group['source'])
-        group['path'] = (root.resolve().as_posix() if root else group['source']).rstrip('/') + ('/' + group['directory'] if group['directory'] else '')
+        group['path'] = roots.get(group['source'],group['source']) + ('/' + group['directory'] if group['directory'] else '')
     matches = sorted((g for g in groups.values() if keyword.casefold() in g['path'].casefold() and
                       (keyword or (not source and not g['directory']) or
                        (source and (g['directory'] == directory or
                         str(PurePosixPath(g['directory']).parent) == (directory or '.'))))), key=lambda g:g['path'])
-    rows.sort(key=lambda r:r['relpath'])
     return {'directories':matches[:200], 'directories_truncated':len(matches)>200,
-            'files':rows[offset:offset+50] if source else [], 'total_files':len(rows),
-            'offset':offset, 'has_more':bool(source and len(rows)>offset+50),
+            'files':files, 'total_files':total,
+            'offset':offset, 'has_more':bool(source and total>offset+50),
             'jobs':db.rows('SELECT * FROM index_removals ORDER BY created DESC LIMIT 30')}
+
+
+def fill_sizes(runtime, limit=256):
+    """Backfill old chunks in small batches; directory requests never inspect the disk."""
+    rows = runtime.db.rows('SELECT version,start,path FROM chunks WHERE byte_size IS NULL LIMIT ?', (limit,))
+    updates = []
+    for row in rows:
+        if runtime.worker.stop_event.is_set():
+            break
+        relative = PurePosixPath(row['path'])
+        if relative.is_absolute() or '..' in relative.parts or not relative.parts or relative.parts[0] != 'vectors':
+            continue
+        try:
+            size = (runtime.settings.data / row['path']).stat().st_size
+        except FileNotFoundError:
+            size = 0
+        except OSError:
+            continue
+        updates.append((size,row['version'],row['start'],row['path']))
+    if updates:
+        with runtime.db.connect() as c:
+            c.executemany('UPDATE chunks SET byte_size=? WHERE version=? AND start=? AND path=? AND byte_size IS NULL',updates)
+    return len(updates)
+
+
+def backfill_sizes(runtime):
+    while not runtime.worker.stop_event.is_set():
+        try:
+            count = fill_sizes(runtime)
+        except Exception:
+            count = 0
+        runtime.worker.stop_event.wait(.1 if count else 30)
 
 
 def enqueue(runtime, source, directory, exclude=True):

@@ -1,16 +1,18 @@
 /* Directory index management shares the authenticated API and navigation. */
 let librarySource = '', libraryDirectory = '', libraryOffset = 0, librarySequence = 0;
 let libraryDeletion = null, libraryDeleteBusy = false, libraryTimer = null;
-let libraryJobsSignature = '', libraryPolling = false;
+let libraryJobsSignature = '', libraryPolling = false, librarySizesPending = false;
 function libraryBytes(value) {
   return value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(2)} GiB` : `${(value / 1024 ** 2).toFixed(1)} MiB`;
 }
 async function refreshLibrary() {
   const sequence = ++librarySequence;
+  $("library-message").textContent = '正在读取目录索引…';
   const data = await api('/api/index/library?' + new URLSearchParams({source:librarySource,
     directory:libraryDirectory, keyword:$("library-keyword").value.trim(), offset:libraryOffset}));
   if (sequence !== librarySequence) return;
   libraryJobsSignature = JSON.stringify(data.jobs);
+  librarySizesPending = data.directories.some(item => item.size_pending);
   $("library-path").textContent = librarySource ? `${directoryRoot(librarySource)}${libraryDirectory ? '/'+libraryDirectory : ''}（含子目录）` : '全部已索引目录';
   $("library-up").disabled = !librarySource;
   $("library-message").textContent = data.directories_truncated ? '显示前 200 个目录，请细化关键词。' : (data.directories.length ? '' : '没有匹配的目录索引。');
@@ -22,13 +24,13 @@ async function refreshLibrary() {
     remove.addEventListener('click', () => {
       libraryDeletion = item;
       $("library-delete-path").textContent = item.path;
-      $("library-delete-count").textContent = `${item.files.toLocaleString()} 个文件 · ${item.vectors.toLocaleString()} 个可搜索向量 · ${libraryBytes(item.bytes)} 原始分块`;
+      $("library-delete-count").textContent = `${item.files.toLocaleString()} 个文件 · ${item.vectors.toLocaleString()} 个可搜索向量 · ${item.size_pending ? '分块大小统计中' : libraryBytes(item.bytes)+' 原始分块'}`;
       $("library-delete-exclude").checked = true; $("library-delete-warning").hidden = true;
       $("library-delete-error").textContent = ''; $("library-delete-dialog").showModal();
     });
     actions.append(remove);
     row.append(name, node('td','',`${item.bif.toLocaleString()} / ${item.images.toLocaleString()}`),
-      node('td','',item.vectors.toLocaleString()), node('td','',libraryBytes(item.bytes)), actions);
+      node('td','',item.vectors.toLocaleString()), node('td','',item.size_pending ? '统计中' : libraryBytes(item.bytes)), actions);
     return row;
   }));
   const statuses = {ready:'已完成', queued:'待处理', pending:'待处理', processing:'处理中', failed:'待重试', observed:'等待稳定', deleted:'已移除'};
@@ -78,7 +80,7 @@ setInterval(async () => {
   libraryPolling = true;
   try {
     const data = await api('/api/index/removals');
-    if (JSON.stringify(data.jobs) !== libraryJobsSignature) await loadLibrary();
+    if (librarySizesPending || JSON.stringify(data.jobs) !== libraryJobsSignature) await loadLibrary();
   } catch (error) { $("library-message").textContent = error.message; }
   finally { libraryPolling = false; }
 },10000);

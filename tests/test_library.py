@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from conftest import build, write_bif
-from frameseek.engine.library import enqueue, inventory, process_removal
+from frameseek.engine.library import enqueue, inventory, process_removal, fill_sizes
 from frameseek.engine.monitoring import folders, includes
 from frameseek.core.preferences import requested
 from frameseek.web import create_app
@@ -46,6 +46,26 @@ def test_inventory_and_directory_removal_preserve_media_and_other_scopes(runtime
     assert inventory(runtime,'sda','剧集')['total_files'] == 0
     assert inventory(runtime,'sda','剧集备份')['total_files'] == 1
     assert str(first.parent.as_posix()) in requested(runtime.settings,runtime.db)['excluded_directories']
+
+
+def test_inventory_uses_saved_sizes_and_backfills_legacy_chunks(runtime, monkeypatch):
+    write_bif(runtime.settings.sources['sda']/'folder'/'one.bif')
+    build(runtime)
+    expected = inventory(runtime)['directories'][0]['bytes']
+    runtime.db.execute('UPDATE chunks SET byte_size=NULL')
+    from pathlib import Path
+    original_stat = Path.stat
+    def refuse_vector_stat(path, *args, **kwargs):
+        if path.suffix == '.npz':
+            raise AssertionError('Directory API must not inspect vector chunk files')
+        return original_stat(path,*args,**kwargs)
+    monkeypatch.setattr(Path,'stat',refuse_vector_stat)
+    root = inventory(runtime)['directories'][0]
+    assert root['size_pending'] and root['vectors']==3
+    monkeypatch.setattr(Path,'stat',original_stat)
+    assert fill_sizes(runtime)==2
+    root = inventory(runtime)['directories'][0]
+    assert not root['size_pending'] and root['bytes']==expected
 
 
 def test_failed_delete_retries_and_explicit_rebuild(runtime, monkeypatch):
