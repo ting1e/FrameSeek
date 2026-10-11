@@ -466,6 +466,15 @@ class BackgroundWorker:
     def run(self):
         next_scan = 0.0
         while not self.stop_event.is_set():
+            from frameseek.engine.library import process_removal
+            if self.runtime.db.one("SELECT 1 FROM index_removals WHERE status!='done' AND retry_at<=?", (time.time(),)):
+                self.activity = 'removing_index'
+                try:
+                    process_removal(self.runtime)
+                except Exception as error:
+                    self.error = str(error)
+                    self.wait(2)
+                continue
             if self.config_event.is_set():
                 self.config_event.clear()
                 next_scan = 0.0

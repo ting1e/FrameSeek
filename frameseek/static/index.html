@@ -6,10 +6,10 @@
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=20261007-generated">
   <link rel="apple-touch-icon" href="/static/app-icon.png?v=20261007">
   <link rel="stylesheet" href="/static/daisyui.css?v=20261007-theme-cleanup"><link rel="stylesheet" href="/static/style.css?v=20261007-result-frame-row">
-  <script src="/static/app.js?v=20261007-inference-settings" defer></script>
+  <script src="/static/app.js?v=20261011-library" defer></script><script src="/static/library.js?v=20261011" defer></script>
 </head>
 <body class="bg-base-200 text-base-content">
-  <header class="navbar page-header"><a class="brand" href="/" aria-label="FrameSeek 首页">FrameSeek</a><div id="header-status" class="header-status" hidden><nav class="tabs tabs-border flex-1 header-navigation" aria-label="主导航"><button id="search-tab" class="text-base tab tab-active font-medium" aria-current="page">截图搜索</button><button id="history-tab" class="text-base tab">搜索历史</button><button id="background-tasks" class="text-base tab">后台任务</button><button id="settings-tab" class="text-base tab">设置</button></nav><button id="logout" class="btn btn-ghost btn-sm">退出登录</button></div></header>
+  <header class="navbar page-header"><a class="brand" href="/" aria-label="FrameSeek 首页">FrameSeek</a><div id="header-status" class="header-status" hidden><nav class="tabs tabs-border flex-1 header-navigation" aria-label="主导航"><button id="search-tab" class="text-base tab tab-active font-medium" aria-current="page">截图搜索</button><button id="history-tab" class="text-base tab">搜索历史</button><button id="background-tasks" class="text-base tab">后台任务</button><button id="library-tab" class="text-base tab">索引管理</button><button id="settings-tab" class="text-base tab">设置</button></nav><button id="logout" class="btn btn-ghost btn-sm">退出登录</button></div></header>
   <main class="page-main">
     <section id="session-loading" class="card bg-base-100 session-loading" role="status" aria-live="polite" aria-busy="true"><div class="card-body"><span id="session-spinner" class="loading loading-spinner loading-sm" aria-hidden="true"></span><p id="session-message">正在加载图库…</p><button id="session-retry" class="btn btn-outline btn-sm" hidden>重新连接</button></div></section>
     <noscript><p class="alert alert-error">浏览器需要启用 JavaScript 才能登录及搜索。</p></noscript>
@@ -45,6 +45,13 @@
         <div class="card bg-base-100 task-events-card"><div class="card-body"><div class="task-events-heading"><h2>处理记录</h2><span class="badge badge-ghost">每 10 秒刷新</span><button id="clear-events" class="btn btn-ghost btn-sm">清空记录</button></div><ul id="events" class="events"></ul><div class="history-pagination"><button id="events-prev" class="btn btn-outline btn-sm">上一页</button><span id="events-page"></span><button id="events-next" class="btn btn-outline btn-sm">下一页</button></div></div></div>
       </section>
 
+      <section id="library-workspace" hidden>
+        <div class="workspace-toolbar library-toolbar"><button id="library-home" class="btn btn-outline btn-sm">全部目录</button><button id="library-up" class="btn btn-ghost btn-sm">上一级</button><input id="library-keyword" class="input input-sm" placeholder="查找目录" aria-label="查找索引目录"><button id="library-refresh" class="btn btn-outline btn-sm">刷新</button></div>
+        <p id="library-path" class="file-path"></p><p id="library-message" class="message" role="status"></p>
+        <div class="card bg-base-100"><div class="card-body"><h2>目录索引</h2><p class="settings-help">统计包含子目录。分块大小为原始向量文件，不含 Qdrant 索引占用。</p><div class="library-scroll"><table class="table"><thead><tr><th>目录</th><th>BIF / 图片</th><th>可搜索向量</th><th>向量分块</th><th>操作</th></tr></thead><tbody id="library-directories"></tbody></table></div></div></div>
+        <div class="card bg-base-100"><div class="card-body"><h2>文件记录</h2><div class="library-scroll"><table class="table"><thead><tr><th>文件</th><th>类型</th><th>状态</th><th>可搜索向量</th><th>更新时间</th></tr></thead><tbody id="library-files"></tbody></table></div><div class="history-pagination"><button id="library-prev" class="btn btn-outline btn-sm">上一页</button><span id="library-page"></span><button id="library-next" class="btn btn-outline btn-sm">下一页</button></div></div></div>
+        <div class="card bg-base-100"><div class="card-body"><h2>索引清理任务</h2><div id="library-jobs" role="status"></div><p class="settings-help">原文件保留。Qdrant 磁盘空间随数据库整理逐步释放。</p></div></div>
+      </section>
       <section id="settings-workspace" hidden>
         <div class="history-heading workspace-toolbar"><button id="reload-settings" class="btn btn-outline btn-sm">重新读取</button></div>
         <form id="settings-form" class="settings-form"><div class="card bg-base-100 settings-card"><div class="card-body"><h2>监控文件夹</h2><p class="settings-help">完整目录，每行一个，监控其中及子目录的 BIF 和图片；留空停止监控。</p><label class="fieldset">目录列表<textarea id="monitor-directories" class="textarea monitor-paths" rows="5" placeholder="/mnt/videos&#10;/mnt/archive"></textarea></label><label class="fieldset">排除目录列表<textarea id="excluded-directories" class="textarea monitor-paths" rows="4" placeholder="/mnt/videos/不处理的目录"></textarea></label><p class="settings-help">排除其中及子目录的 BIF 和图片；已有搜索画面保留。</p><p class="settings-help">Docker 填写容器内目录，新增目录需先在 Compose 中挂载；本地运行填写本机目录。</p><p class="settings-help">下一轮扫描生效。取消监控保留已有画面和历史；删除文件会移除对应画面。</p></div></div>
@@ -70,6 +77,7 @@
   </main>
   <button id="back-to-top" class="btn btn-primary back-to-top" type="button" aria-label="返回页面顶部" title="返回顶部" hidden>↑</button>
   <footer class="page-footer">FrameSeek · 本地图片搜索 <span>搜索记录保存在本地，只有你主动删除才会移除</span></footer>
+  <dialog id="library-delete-dialog" class="modal"><div class="modal-box"><h3>删除这个目录的索引？</h3><p id="library-delete-path" class="file-path"></p><p id="library-delete-count"></p><p>包含全部子目录，将删除搜索向量、原始向量分块及帧记录。原始图片、BIF 和视频保留。</p><label class="settings-toggle"><input id="library-delete-exclude" type="checkbox" class="checkbox checkbox-sm" checked><span>同时加入排除监控目录</span></label><p id="library-delete-warning" class="settings-help" hidden>后续扫描可能重新生成该目录的索引。</p><p id="library-delete-error" class="error"></p><div class="modal-action"><button id="library-delete-cancel" class="btn btn-ghost" autofocus>保留索引</button><button id="library-delete-confirm" class="btn btn-error">删除索引</button></div></div></dialog>
   <dialog id="events-clear-dialog" class="modal"><div class="modal-box"><h3>清空处理记录？</h3><p>清除当前已保存的处理记录，不影响索引、搜索历史和后台任务。清除后无法恢复。</p><p id="events-clear-error" class="error"></p><div class="modal-action"><button id="events-clear-cancel" class="btn btn-ghost" autofocus>保留记录</button><button id="events-clear-confirm" class="btn btn-error">清空记录</button></div></div></dialog>
   <dialog id="delete-dialog" class="modal" aria-labelledby="delete-title" aria-describedby="delete-description">
     <div class="modal-box delete-modal">

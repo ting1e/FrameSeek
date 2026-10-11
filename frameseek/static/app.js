@@ -24,7 +24,7 @@ async function api(path, options = {}) {
 function showLogin() { $("session-loading").hidden = true; historyLoaded = false;  $("login-section").hidden = false; $("search-section").hidden = true; $("header-status").hidden = true; if (polling) clearInterval(polling); polling = null; }
 function showSearch() { $("session-loading").hidden = true; if (!historyLoaded) { historyLoaded = true; loadSettings(true).catch(() => {}); loadEmbySettings().catch(() => {}); refreshHistory().catch(() => { historyLoaded = false; }); }  $("login-section").hidden = true; $("search-section").hidden = false; $("header-status").hidden = false; if (!polling) polling = setInterval(() => refreshStatus().catch(() => {}), 10000); }
 function taskEventLabel(kind) {
-  return ({task_pause:"任务暂停",task_resume:"任务继续",scan:"目录扫描",watch_update:"变动检查",watch_error:"监听异常",bif_modified:"文件变动",indexed:"特征更新完成",scan_error:"扫描异常",index_error:"处理失败",search_error:"搜索异常",history_error:"历史保存异常"})[kind] || "任务记录";
+  return ({index_removal_queued:"索引清理已安排",index_removal_done:"索引清理完成",index_removal_error:"索引清理重试",task_pause:"任务暂停",task_resume:"任务继续",scan:"目录扫描",watch_update:"变动检查",watch_error:"监听异常",bif_modified:"文件变动",indexed:"特征更新完成",scan_error:"扫描异常",index_error:"处理失败",search_error:"搜索异常",history_error:"历史保存异常"})[kind] || "任务记录";
 }
 function taskEventMessage(event) {
   if (event.kind === "scan" || event.kind === "watch_update") {
@@ -40,7 +40,7 @@ async function refreshStatus() {
   $("pending-count").textContent = `等待稳定 ${tasks.stabilizing} · 待编码 ${tasks.queued} · 编码中 ${tasks.processing} · 解析失败 ${tasks.parse_failed || 0} · 编码失败 ${tasks.failed - (tasks.parse_failed || 0)}`;
   paused = Boolean(status.suspended_task); $("pause").textContent = paused ? "继续任务" : "暂停当前任务";
   const directories = status.monitor_directories || [];
-  const labels = {idle:tasks.stabilizing ? "等待文件稳定" : (status.manual_active ? "本次更新仍在进行" : (status.realtime_monitoring ? "正在监听文件变动" : "等待下一次检查")),paused:"更新已暂停",task_paused:"当前任务已暂停",disabled:"手动更新模式",scanning:"正在扫描监控目录",checking_changes:"正在检查变动文件",reparsing:"正在重新解析失败文件",cleanup:"正在清理旧版本向量",error:"更新遇到错误"};
+  const labels = {idle:tasks.stabilizing ? "等待文件稳定" : (status.manual_active ? "本次更新仍在进行" : (status.realtime_monitoring ? "正在监听文件变动" : "等待下一次检查")),paused:"更新已暂停",task_paused:"当前任务已暂停",disabled:"手动更新模式",scanning:"正在扫描监控目录",checking_changes:"正在检查变动文件",reparsing:"正在重新解析失败文件",removing_index:"正在删除目录索引",cleanup:"正在清理旧版本向量",error:"更新遇到错误"};
   $("task-label").textContent = paused && ["idle","disabled","task_paused"].includes(status.activity) ? "当前任务已暂停" : (!directories.length ? "未设置监控目录" : (status.scan_requested ? "检查请求等待执行" : (status.activity.startsWith("indexing:") ? "正在提取画面特征" : (labels[status.activity] || "正在读取任务状态"))));
   $("task-updated").textContent = `状态更新于 ${new Date().toLocaleTimeString("zh-CN", {hour:"2-digit",minute:"2-digit",second:"2-digit"})}`;
   $("task-hint").textContent = paused ? "已保留暂停任务的进度。可执行其他手动任务，点击“继续任务”恢复。" : (!directories.length ? "到设置页填写监控目录后，再检查文件变动。" : (status.manual_active && !status.auto_update ? "正在执行一次手动更新；全部任务完成后回到手动模式。编码失败会按退避时间重试；扫描异常需修复后再次检查。" : (!status.auto_update ? "先点击“手动扫描”发现文件，再点击“手动编码”处理队列。解析失败的文件可单独重新解析。" : "系统实时监听文件变动，并定期扫描补查。手动扫描只检查文件，手动编码处理已建立的任务；重新解析用于再次尝试解析失败文件。")));
@@ -150,7 +150,13 @@ function card(result, rank = 0) {
   const body = node("div", "card-body"), row = node("div", "card-row"); row.append(node("span", "score", `相似度 ${(result.score * 100).toFixed(1)}%`));
   const frameIndex = !isImage ? node("span", "frame-index", result.frame_no == null ? "命中画面" : `第 ${result.frame_no + 1} 帧`) : null;
   if (frameIndex) row.append(frameIndex);
+  if (result.index_deleted) body.append(node("span", "badge badge-warning", "索引已删除"));
   const parts = result.relpath.split("/"), filename = parts.pop(); const track = node("div", "score-track"), fill = node("div", "score-fill"); fill.style.width = `${Math.max(0, Math.min(1, result.score)) * 100}%`; track.append(fill); body.append(row, track, node("p", "filename", filename), node("p", "file-path", [result.root_directory || directoryRoot(result.source), ...parts].join("/")));
+  if (result.index_deleted) {
+    thumbnail.disabled = true; image.hidden = true; unavailable.hidden = false; unavailable.textContent = "索引已删除";
+    body.append(node("p", "settings-help", "保留当时的搜索结果，画面索引已清理。"));
+    article.append(thumbnail, body); return article;
+  }
   if (isImage) {
     const bottom = node("div", "card-bottom"), view = node("button", "btn btn-ghost btn-xs text-primary", "查看图片 ↗");
     view.addEventListener("click", () => neighbors(result.id));
@@ -320,7 +326,7 @@ $("session-retry").addEventListener("click", initializeSession);
 
 function switchWorkspace(workspace) {
   if (typeof workspace === "boolean") workspace = workspace ? "history" : "search";
-  for (const [name, tab] of [["search","search-tab"],["history","history-tab"],["tasks","background-tasks"],["settings","settings-tab"]]) {
+  for (const [name, tab] of [["search","search-tab"],["history","history-tab"],["tasks","background-tasks"],["library","library-tab"],["settings","settings-tab"]]) {
     $(`${name}-workspace`).hidden = name !== workspace;
     $(tab).classList.toggle("tab-active", name === workspace);
     $(tab).setAttribute("aria-current", name === workspace ? "page" : "false");

@@ -13,6 +13,8 @@ def folders(settings, db):
                 exclusions.append({'source':source, 'path':''})
             elif contains(root, path):
                 exclusions.append({'source':source, 'path':normalized(path)[len(normalized(root).rstrip('/'))+1:], 'case_insensitive':len(root)>1 and root[1]==':'})
+    exclusions.extend({'source':r['source'], 'path':r['directory']} for r in
+                      db.rows("SELECT source,directory FROM index_removals WHERE status!='done'"))
     return MonitorScope(profile['monitor_folders'], exclusions)
 
 

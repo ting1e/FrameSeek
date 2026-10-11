@@ -74,6 +74,12 @@ class WebPlayTicket(BaseModel):
     ticket: str = Field(min_length=1,max_length=100)
 
 
+class IndexRemoval(BaseModel):
+    source: str = Field(min_length=1, max_length=100)
+    directory: str = Field(default='', max_length=2000)
+    exclude: bool = True
+
+
 def create_app(settings: Settings | None = None, runtime: Runtime | None = None) -> FastAPI:
     settings = settings or Settings()
     runtime = runtime or Runtime(settings)
@@ -95,6 +101,30 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
     remote_roots = roots()
     emby = Emby(runtime.db, {key:remote_roots.get(key, path.resolve().as_posix()) for key,path in settings.sources.items()})
     app.state.emby = emby
+
+    @app.get('/api/index/library')
+    def index_library(request: Request, source: str = '', directory: str = '',
+                      keyword: str = Query('', max_length=200), offset: int = Query(0, ge=0)):
+        auth.require(request)
+        from frameseek.engine.library import inventory
+        try:
+            return inventory(runtime, source, directory, keyword, offset)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
+
+    @app.post('/api/index/removals', status_code=202)
+    def index_remove(request: Request, values: IndexRemoval):
+        auth.require(request, mutation=True)
+        from frameseek.engine.library import enqueue
+        try:
+            return enqueue(runtime, values.source, values.directory, values.exclude)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
+
+    @app.get('/api/index/removals')
+    def index_removal_jobs(request: Request):
+        auth.require(request)
+        return {'jobs':runtime.db.rows('SELECT * FROM index_removals ORDER BY created DESC LIMIT 30')}
     app.add_middleware(BodyLimit)
     app.mount("/static", StaticFiles(directory=static), name="static")
 
@@ -535,6 +565,7 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
         response.setdefault('media_type', 'all')
         runtime.db.add_durations(response['results'])
         for result in response['results']:
+            result['index_deleted'] = runtime.db.published_frame(result['id']) is None
             if result.get('source') in settings.sources:
                 result['root_directory'] = settings.sources[result['source']].resolve().as_posix()
         return {**row, 'response': response, 'thumbnail_url': f'/api/history/{history_id}/image'}

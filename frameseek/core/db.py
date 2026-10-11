@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS frames(
  length INTEGER NOT NULL, valid INTEGER NOT NULL DEFAULT 1, error TEXT,
  UNIQUE(version, frame_no));
 CREATE INDEX IF NOT EXISTS frames_version ON frames(version, frame_no);
+CREATE INDEX IF NOT EXISTS versions_file_id ON versions(file_id);
 CREATE INDEX IF NOT EXISTS frames_bad ON frames(version) WHERE valid=0;
 CREATE INDEX IF NOT EXISTS files_active_version ON files(active_version);
 CREATE INDEX IF NOT EXISTS files_desired_version ON files(desired_version);
@@ -42,6 +43,13 @@ CREATE TABLE IF NOT EXISTS search_history(
  id TEXT PRIMARY KEY, created REAL NOT NULL, filename TEXT NOT NULL,
  thumbnail BLOB NOT NULL, response TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS search_history_created ON search_history(created DESC);
+CREATE TABLE IF NOT EXISTS index_removals(
+ id TEXT PRIMARY KEY, source TEXT NOT NULL, directory TEXT NOT NULL,
+ status TEXT NOT NULL, created REAL NOT NULL, completed INTEGER NOT NULL DEFAULT 0,
+ total INTEGER NOT NULL DEFAULT 0, error TEXT, retry_at REAL NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS index_removal_versions(
+ job TEXT NOT NULL, version TEXT NOT NULL, file_id TEXT NOT NULL,
+ PRIMARY KEY(job,version));
 """
 
 

@@ -75,3 +75,4 @@
 .result-actions .result-action:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}
 
 .events .event-message{white-space:pre-wrap;overflow-wrap:anywhere;overflow:visible;text-overflow:clip}.events li{align-items:flex-start}
+#library-workspace{display:flex;flex-direction:column;gap:18px}#library-workspace[hidden]{display:none}.library-toolbar{display:flex;flex-wrap:wrap;gap:10px}.library-toolbar .input{flex:1;min-width:180px}.library-scroll{overflow-x:auto}.library-directory{height:auto;white-space:normal;overflow-wrap:anywhere;text-align:left;justify-content:flex-start}.library-filename{overflow-wrap:anywhere;min-width:200px}.library-job{font-size:13px;overflow-wrap:anywhere;line-height:1.8}

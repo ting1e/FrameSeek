@@ -24,6 +24,10 @@ assert.equal(context.prepareResults({results:[first,second],collapsed:false}).le
 assert.equal(context.prepareResults({results:[first,second],collapsed:true}).length,1);
 assert.equal(context.prepareResults({results:[first,second],collapse:false}).length,2);
 const article=context.card({...first,group:[first,second],group_count:2}); cards.append(article);
+const deleted=context.card({...first,index_deleted:true});
+assert.equal(deleted.querySelector('.thumbnail-button').disabled,true);
+assert.equal(deleted.querySelector('.emby-play-button'),undefined);
+assert.equal(deleted.querySelector('.badge-warning').textContent,'索引已删除');
 assert.equal(article.querySelector('.card-row').querySelector('.frame-index').textContent,'第 2 帧');
 assert.equal(article.querySelector('.card-bottom').querySelector('.frame-index'),undefined);
 const play=article.querySelector('.emby-play-button'); assert.equal(play.hidden,true);
