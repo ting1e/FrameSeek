@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 
 from conftest import build, write_bif
-from frameseek import bif
+from frameseek.media import bif
 from frameseek.engine.import_embeddings import import_export, import_file
 from frameseek.engine.model import digest
 

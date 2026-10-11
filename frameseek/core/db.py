@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS frames(
  UNIQUE(version, frame_no));
 CREATE INDEX IF NOT EXISTS frames_version ON frames(version, frame_no);
 CREATE INDEX IF NOT EXISTS versions_file_id ON versions(file_id);
+CREATE INDEX IF NOT EXISTS versions_sha256 ON versions(sha256);
 CREATE INDEX IF NOT EXISTS frames_bad ON frames(version) WHERE valid=0;
 CREATE INDEX IF NOT EXISTS files_active_version ON files(active_version);
 CREATE INDEX IF NOT EXISTS files_desired_version ON files(desired_version);
@@ -50,6 +51,12 @@ CREATE TABLE IF NOT EXISTS index_removals(
 CREATE TABLE IF NOT EXISTS index_removal_versions(
  job TEXT NOT NULL, version TEXT NOT NULL, file_id TEXT NOT NULL,
  PRIMARY KEY(job,version));
+CREATE TABLE IF NOT EXISTS embedding_jobs(
+ id TEXT PRIMARY KEY, path TEXT NOT NULL, uploaded INTEGER NOT NULL,
+ sha256 TEXT NOT NULL, cache_key TEXT NOT NULL, kind TEXT NOT NULL,
+ total INTEGER NOT NULL, cursor INTEGER NOT NULL DEFAULT 0,
+ status TEXT NOT NULL DEFAULT 'pending', cache_hit INTEGER NOT NULL DEFAULT 0,
+ created REAL NOT NULL, details TEXT NOT NULL DEFAULT '{}', error TEXT);
 """
 
 

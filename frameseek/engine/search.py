@@ -49,6 +49,8 @@ class Runtime:
         self.query_slots = threading.BoundedSemaphore(4)
         self.progress = ProcessingProgress()
         self.worker = BackgroundWorker(self)
+        from frameseek.engine.embedding_api import EmbeddingService
+        self.embedding_api = EmbeddingService(self)
 
     def get_store(self):
         with self.init_lock:
@@ -119,6 +121,7 @@ class Runtime:
                 "candidate_limit_reached": candidates < maximum and len(valid) < top}
 
     def close(self):
+        self.embedding_api.stop()
         self.worker.stop()
         if self.store:
             self.store.close()

@@ -34,8 +34,8 @@ MAX_UPLOAD = 10 * 1024 * 1024
 
 
 class UploadTooLarge(HTTPException):
-    def __init__(self):
-        super().__init__(413, '图片最大 10MB')
+    def __init__(self, detail='图片最大 10MB'):
+        super().__init__(413, detail)
 
 
 class BodyLimit:
@@ -50,8 +50,10 @@ class BodyLimit:
             nonlocal total
             message = await receive()
             total += len(message.get("body", b""))
-            if total > MAX_UPLOAD + 1024 * 1024:
-                raise UploadTooLarge()
+            from frameseek.engine.embedding_api import MAX_API_UPLOAD
+            maximum = MAX_API_UPLOAD if scope['path']=='/api/v1/embeddings/upload' else MAX_UPLOAD
+            if total > maximum + 1024 * 1024:
+                raise UploadTooLarge('上传文件最大 128 MiB' if maximum==MAX_API_UPLOAD else '图片最大 10MB')
             return message
         async def tracked_send(message):
             nonlocal started
@@ -62,7 +64,8 @@ class BodyLimit:
             await self.app(scope, limited_receive, tracked_send)
         except UploadTooLarge:
             if not started:
-                await JSONResponse({"detail": "图片最大 10MB"}, status_code=413)(scope, receive, send)
+                detail = '上传文件最大 128 MiB' if scope['path']=='/api/v1/embeddings/upload' else '图片最大 10MB'
+                await JSONResponse({"detail": detail}, status_code=413)(scope, receive, send)
 
 
 class Login(BaseModel):
@@ -92,6 +95,7 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
     @asynccontextmanager
     async def lifespan(app):
         runtime.worker.start()
+        runtime.embedding_api.start()
         yield
         await run_in_threadpool(runtime.close)
 
@@ -101,6 +105,8 @@ def create_app(settings: Settings | None = None, runtime: Runtime | None = None)
     remote_roots = roots()
     emby = Emby(runtime.db, {key:remote_roots.get(key, path.resolve().as_posix()) for key,path in settings.sources.items()})
     app.state.emby = emby
+    from frameseek.embedding_routes import install_embedding_routes
+    install_embedding_routes(app,runtime,auth)
 
     @app.get('/api/index/library')
     def index_library(request: Request, source: str = '', directory: str = '',
